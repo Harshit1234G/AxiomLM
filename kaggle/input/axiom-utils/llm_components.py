@@ -95,21 +95,66 @@ class PositionalEncoding(tf.keras.layers.Layer):
         **kwargs
     ) -> None:
         super().__init__(dtype= dtype, **kwargs)
-        assert embed_size % 2 == 0, 'embed_size must be even'
+        self.max_seq_len = max_seq_len
+        self.embed_size = embed_size
+        assert self.embed_size % 2 == 0, 'embed_size must be even'
 
         # p -> each column is a position index
         # i -> each row corresponds to even embedding dimensions
         p, i = np.meshgrid(
-            np.arange(max_seq_len),
-            2 * np.arange(embed_size // 2)
+            np.arange(self.max_seq_len),
+            2 * np.arange(self.embed_size // 2)
         )
         # initializing PE matrix
-        pos_emb = np.empty((1, max_seq_len, embed_size))   # (Batch, Positions, Embedding dimensions)
-        pos_emb[0, :, ::2] = np.sin(p / 10_000 ** (i / embed_size)).T    # sine on even dimensions
-        pos_emb[0, :, 1::2] = np.cos(p / 10_000 ** (i / embed_size)).T   # cosine on odd dimensions
+        pos_emb = np.empty((1, self.max_seq_len, self.embed_size))   # (Batch, Positions, Embedding dimensions)
+        pos_emb[0, :, ::2] = np.sin(p / 10_000 ** (i / self.embed_size)).T    # sine on even dimensions
+        pos_emb[0, :, 1::2] = np.cos(p / 10_000 ** (i / self.embed_size)).T   # cosine on odd dimensions
         self.pos_encodings = tf.constant(pos_emb.astype(self.dtype))
         self.supports_masking = True    # propagates the input's automatic mask to next layer
 
-    def call(self, inputs):
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
         batch_max_length = tf.shape(inputs)[1]
         return inputs + self.pos_encodings[:, :batch_max_length]
+    
+    def get_config(self) -> dict:
+        base_config = super().get_config()
+        return {
+            **base_config,
+            'max_seq_len': self.max_seq_len,
+            'embed_size': self.embed_size
+        }
+
+
+# ----------------------------
+# Layer Normalization
+# ----------------------------
+class LayerNormalization(tf.keras.layers.Layer):
+    def __init__(self, epsilon: float = 1e-3, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.epsilon = epsilon
+
+    def build(self, input_shape: tuple[int, ...]) -> None:
+        self.gamma = self.add_weight(
+            name= 'gamma', 
+            shape= input_shape[-1:],
+            initializer= 'ones',
+            trainable= True
+        )
+        
+        self.beta = self.add_weight(
+            name= 'beta', 
+            shape= input_shape[-1:],
+            initializer= 'zeros',
+            trainable= True
+        )
+
+    def call(self, X: tf.Tensor) -> tf.Tensor:
+        mean, variance = tf.nn.moments(X, axes= -1, keepdims= True)
+        return self.gamma * (X - mean) / (tf.sqrt(variance + self.epsilon)) + self.beta
+
+    def get_config(self) -> dict:
+        base_config = super().get_config()
+        return {
+            **base_config,
+            'epsilon': self.epsilon
+        }
