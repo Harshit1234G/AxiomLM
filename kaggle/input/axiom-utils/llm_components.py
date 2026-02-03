@@ -158,3 +158,8 @@ class LayerNormalization(tf.keras.layers.Layer):
             **base_config,
             'epsilon': self.epsilon
         }
+
+
+def softmax_with_temperature(logits: tf.Tensor, temperature: float = 1.0) -> tf.Tensor:
+    logits = logits / temperature
+    return tf.nn.softmax(logits)
