@@ -214,3 +214,25 @@ class AttentionHead(tf.keras.layers.Layer):
         out = weights @ v
         return out
 
+
+class MultiHeadedAttention(tf.keras.layers.Layer):
+    def __init__(
+        self, 
+        num_heads: int, 
+        head_size: int, 
+        *, 
+        n_embeds: int = N_EMBEDS,
+        dropout_rate: float = DROPOUT_RATE,
+        **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self.heads = [AttentionHead(head_size) for _ in range(num_heads)]
+        self.proj = tf.keras.layers.Dense(n_embeds)
+        self.dropout = tf.keras.layers.Dropout(dropout_rate)
+
+    def call(self, x: tf.Tensor) -> tf.Tensor:
+        out = tf.concat([h(x) for h in self.heads], axis= -1)
+        out = self.dropout(out)
+        out = self.proj(out)
+        return out
+    
