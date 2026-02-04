@@ -32,12 +32,14 @@ class LMDatasetLoader:
         *,
         seq_len: int = SEQUENCE_LEN,
         batch_size: int = BATCH_SIZE,
-        shuffle_buffer: int | None = None
+        shuffle_buffer: int | None = None,
+        cache: bool = False
     ) -> None:
         self.tokenizer = tokenizer
         self.seq_len = seq_len
         self.batch_size = batch_size
         self.shuffle_buffer = shuffle_buffer
+        self.cache = cache
 
     def sp_tokenize(self, line: tf.Tensor) -> tf.Tensor:
         tokens = self.tokenizer.encode(line.numpy().decode('utf-8'), out_type= int)
@@ -80,6 +82,9 @@ class LMDatasetLoader:
             ds = ds.shuffle(self.shuffle_buffer)
 
         ds = ds.batch(self.batch_size)
+        if self.cache:
+            ds = ds.cache()
+            
         ds = ds.prefetch(AUTOTUNE)
         return ds
     
