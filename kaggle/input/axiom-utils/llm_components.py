@@ -11,6 +11,7 @@ BATCH_SIZE = 64
 SHUFFLE_BUFFER = 10_000
 N_EMBEDS = 512
 DROPOUT_RATE = 0.2
+N_HEADS = 8
 
 
 # ----------------------------
@@ -173,8 +174,7 @@ class AttentionHead(tf.keras.layers.Layer):
     def __init__(
         self, 
         head_size: int, 
-        *, 
-        dropout_rate: float = DROPOUT_RATE, 
+        dropout_rate: float, 
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
@@ -220,9 +220,8 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         self, 
         num_heads: int, 
         head_size: int, 
-        *, 
-        n_embeds: int = N_EMBEDS,
-        dropout_rate: float = DROPOUT_RATE,
+        n_embeds: int,
+        dropout_rate: float,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
@@ -240,11 +239,11 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
 class FeedForward(tf.keras.layers.Layer):
     def __init__(
         self, 
+        n_embed: int, 
+        dropout_rate: float,
         *,
         activation: str = 'gelu',
         kernel_initializer: str = 'he_normal',
-        n_embed: int = N_EMBEDS, 
-        dropout_rate: float = DROPOUT_RATE,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
@@ -264,3 +263,23 @@ class FeedForward(tf.keras.layers.Layer):
         return self.net(x)
     
 
+class TransformerBlock(tf.keras.layers.Layer):
+    def __init__(
+        self,
+        *,
+        n_embeds: int = N_EMBEDS,
+        n_heads: int = N_HEADS,
+        dropout_rate: float = DROPOUT_RATE,
+        **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        head_size = n_embeds // n_heads
+        self.attention = MultiHeadedAttention(n_heads, head_size, n_embeds, dropout_rate)
+        self.ffwd = FeedForward(n_embeds, dropout_rate)
+        self.ln1 = LayerNormalization()
+        self.ln2 = LayerNormalization()
+
+    def call(self, x: tf.Tensor) -> tf.Tensor:
+        x = x + self.attention(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
+        return x
