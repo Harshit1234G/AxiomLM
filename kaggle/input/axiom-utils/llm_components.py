@@ -261,21 +261,34 @@ class TransformerBlock(tf.keras.layers.Layer):
     ) -> None:
         super().__init__(**kwargs)
 
+        self.n_embeds = n_embeds
+        self.n_heads = n_heads
+        self.dropout_rate = dropout_rate
+
         self.ln1 = LayerNormalization()
         self.ln2 = LayerNormalization()
 
         self.attn = MultiHeadedAttention(
-            n_embeds= n_embeds,
-            n_heads= n_heads,
-            dropout_rate= dropout_rate
+            n_embeds= self.n_embeds,
+            n_heads= self.n_heads,
+            dropout_rate= self.dropout_rate
         )
 
         self.ffwd = FeedForward(
-            n_embed= n_embeds,
-            dropout_rate= dropout_rate
+            n_embed= self.n_embeds,
+            dropout_rate= self.dropout_rate
         )
 
     def call(self, x: tf.Tensor, training: bool = False) -> tf.Tensor:
         x = x + self.attn(self.ln1(x), training= training)
         x = x + self.ffwd(self.ln2(x), training= training)
         return x
+
+    def get_config(self) -> dict:
+        base_config = super().get_config()
+        return {
+            **base_config,
+            'n_embeds': self.n_embeds,
+            'n_heads': self.n_heads,
+            'dropout_rate': self.dropout_rate
+        }
