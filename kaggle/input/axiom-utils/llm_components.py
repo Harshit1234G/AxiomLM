@@ -236,3 +236,31 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         out = self.proj(out)
         return out
     
+
+class FeedForward(tf.keras.layers.Layer):
+    def __init__(
+        self, 
+        *,
+        activation: str = 'gelu',
+        kernel_initializer: str = 'he_normal',
+        n_embed: int = N_EMBEDS, 
+        dropout_rate: float = DROPOUT_RATE,
+        **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self.activation = tf.keras.activations.get(activation)
+
+        self.net = tf.keras.Sequential([
+            tf.keras.layers.Dense(
+                4 * n_embed, 
+                activation= self.activation,
+                kernel_initializer= kernel_initializer
+            ),
+            tf.keras.layers.Dense(n_embed),
+            tf.keras.layers.Dropout(dropout_rate)
+        ])
+
+    def call(self, x: tf.Tensor) -> tf.Tensor:
+        return self.net(x)
+    
+
