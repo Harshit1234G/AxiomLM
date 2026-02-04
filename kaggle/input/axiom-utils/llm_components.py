@@ -10,6 +10,7 @@ SEQUENCE_LEN = 256
 BATCH_SIZE = 64
 SHUFFLE_BUFFER = 10_000
 N_EMBEDS = 512
+DROPOUT_RATE = 0.2
 
 
 # ----------------------------
@@ -129,7 +130,7 @@ class PositionalEncoding(tf.keras.layers.Layer):
 # Layer Normalization
 # ----------------------------
 class LayerNormalization(tf.keras.layers.Layer):
-    def __init__(self, epsilon: float = 1e-3, **kwargs) -> None:
+    def __init__(self, *, epsilon: float = 1e-3, **kwargs) -> None:
         super().__init__(**kwargs)
         self.epsilon = epsilon
 
@@ -160,7 +161,7 @@ class LayerNormalization(tf.keras.layers.Layer):
         }
 
 
-def softmax_with_temperature(logits: tf.Tensor, temperature: float = 1.0) -> tf.Tensor:
+def softmax_with_temperature(logits: tf.Tensor, *, temperature: float = 1.0) -> tf.Tensor:
     logits = logits / temperature
     return tf.nn.softmax(logits)
 
@@ -168,3 +169,48 @@ def softmax_with_temperature(logits: tf.Tensor, temperature: float = 1.0) -> tf.
 # ----------------------------
 # Attention Mechanism
 # ----------------------------
+class AttentionHead(tf.keras.layers.Layer):
+    def __init__(
+        self, 
+        head_size: int, 
+        *, 
+        dropout_rate: float = DROPOUT_RATE, 
+        **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self.head_size = head_size
+        self.dropout = tf.keras.layers.Dropout(dropout_rate)
+
+        self.key = tf.keras.layers.Dense(
+            self.head_size, 
+            activation= None, 
+            use_bias= False
+        )
+        self.query = tf.keras.layers.Dense(
+            self.head_size, 
+            activation= None, 
+            use_bias= False
+        )
+        self.value = tf.keras.layers.Dense(
+            self.head_size, 
+            activation= None, 
+            use_bias= False
+        )
+
+    def call(self, x: tf.Tensor) -> tf.Tensor:
+        # input of size (batch, time-step, channels)
+        # output of size (batch, time-step, head size)
+        B, T, C = x.shape
+        k = self.key(x)     # (B,T,hs)
+        q = self.query(x)   # (B,T,hs)
+        # compute attention scores
+        weights = q @ tf.transpose(k, perm= [0, 2, 1]) * k.shape[-1] ** -0.5    # (B, T, hs) @ (B, hs, T) -> (B, T, T)
+        tril = tf.linalg.band_part(tf.ones((T, T)), -1, 0)
+        weights = tf.where(tril == 0, float('-inf'), weights)
+        weights = tf.nn.softmax(weights)
+        weights = self.dropout(weights)
+        # weighted aggregation
+        v = self.value(x)
+        out = weights @ v
+        return out
+
