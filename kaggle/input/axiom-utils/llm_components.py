@@ -170,71 +170,58 @@ def softmax_with_temperature(logits: tf.Tensor, *, temperature: float = 1.0) -> 
 # ----------------------------
 # Attention Mechanism
 # ----------------------------
-class AttentionHead(tf.keras.layers.Layer):
-    def __init__(
-        self, 
-        head_size: int, 
-        dropout_rate: float, 
-        **kwargs
-    ) -> None:
-        super().__init__(**kwargs)
-        self.head_size = head_size
-        self.dropout = tf.keras.layers.Dropout(dropout_rate)
-
-        self.key = tf.keras.layers.Dense(
-            self.head_size, 
-            activation= None, 
-            use_bias= False
-        )
-        self.query = tf.keras.layers.Dense(
-            self.head_size, 
-            activation= None, 
-            use_bias= False
-        )
-        self.value = tf.keras.layers.Dense(
-            self.head_size, 
-            activation= None, 
-            use_bias= False
-        )
-
-    def call(self, x: tf.Tensor) -> tf.Tensor:
-        # input of size (batch, time-step, channels)
-        # output of size (batch, time-step, head size)
-        B, T, C = x.shape
-        k = self.key(x)     # (B,T,hs)
-        q = self.query(x)   # (B,T,hs)
-        # compute attention scores
-        weights = q @ tf.transpose(k, perm= [0, 2, 1]) * k.shape[-1] ** -0.5    # (B, T, hs) @ (B, hs, T) -> (B, T, T)
-        tril = tf.linalg.band_part(tf.ones((T, T)), -1, 0)
-        weights = tf.where(tril == 0, float('-inf'), weights)
-        weights = tf.nn.softmax(weights)
-        weights = self.dropout(weights)
-        # weighted aggregation
-        v = self.value(x)
-        out = weights @ v
-        return out
-
-
 class MultiHeadedAttention(tf.keras.layers.Layer):
     def __init__(
         self, 
-        num_heads: int, 
-        head_size: int, 
-        n_embeds: int,
-        dropout_rate: float,
+        n_embeds: int, 
+        n_heads: int, 
+        dropout_rate: int, 
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
-        self.heads = [AttentionHead(head_size) for _ in range(num_heads)]
+        assert n_embeds % n_heads == 0
+
+        self.n_heads = n_heads
+        self.head_dim = n_embeds // n_heads
+        self.scale = self.head_dim ** -0.5
+
+        self.qkv = tf.keras.layers.Dense(
+            3 * n_embeds,
+            use_bias= False
+        )
         self.proj = tf.keras.layers.Dense(n_embeds)
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
 
-    def call(self, x: tf.Tensor) -> tf.Tensor:
-        out = tf.concat([h(x) for h in self.heads], axis= -1)
-        out = self.dropout(out)
-        out = self.proj(out)
-        return out
-    
+    def call(self, x: tf.Tensor, training: bool = False) -> tf.Tensor:
+        B = tf.shape(x)[0]
+        T = tf.shape(x)[1]
+
+        qkv = self.qkv(x)  # (B, T, 3 * C)
+        q, k, v = tf.split(qkv, 3, axis= -1)
+
+        q = tf.reshape(q, (B, T, self.n_heads, self.head_dim))
+        k = tf.reshape(k, (B, T, self.n_heads, self.head_dim))
+        v = tf.reshape(v, (B, T, self.n_heads, self.head_dim))
+
+        q = tf.transpose(q, (0, 2, 1, 3))  # (B, H, T, D)
+        k = tf.transpose(k, (0, 2, 1, 3))
+        v = tf.transpose(v, (0, 2, 1, 3))
+
+        att = tf.matmul(q, k, transpose_b= True) * self.scale
+
+        mask = tf.linalg.band_part(tf.ones((T, T)), -1, 0)
+        mask = tf.reshape(mask, (1, 1, T, T))
+        att = tf.where(mask == 0, -1e9, att)
+
+        att = tf.nn.softmax(att, axis= -1)
+        att = self.dropout(att, training= training)
+
+        out = tf.matmul(att, v)  # (B, H, T, D)
+        out = tf.transpose(out, (0, 2, 1, 3))
+        out = tf.reshape(out, (B, T, -1))
+
+        return self.proj(out)
+
 
 class FeedForward(tf.keras.layers.Layer):
     def __init__(
@@ -273,13 +260,22 @@ class TransformerBlock(tf.keras.layers.Layer):
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
-        head_size = n_embeds // n_heads
-        self.attention = MultiHeadedAttention(n_heads, head_size, n_embeds, dropout_rate)
-        self.ffwd = FeedForward(n_embeds, dropout_rate)
+
         self.ln1 = LayerNormalization()
         self.ln2 = LayerNormalization()
 
-    def call(self, x: tf.Tensor) -> tf.Tensor:
-        x = x + self.attention(self.ln1(x))
-        x = x + self.ffwd(self.ln2(x))
+        self.attn = MultiHeadedAttention(
+            n_embeds= n_embeds,
+            n_heads= n_heads,
+            dropout_rate= dropout_rate
+        )
+
+        self.ffwd = FeedForward(
+            n_embed= n_embeds,
+            dropout_rate= dropout_rate
+        )
+
+    def call(self, x: tf.Tensor, training: bool = False) -> tf.Tensor:
+        x = x + self.attn(self.ln1(x), training= training)
+        x = x + self.ffwd(self.ln2(x), training= training)
         return x
