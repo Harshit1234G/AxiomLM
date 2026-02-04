@@ -4,10 +4,10 @@ from sentencepiece import SentencePieceProcessor
 
 
 # ----------------------------
-# Constants
+# Hyperparameters
 # ----------------------------
 SEQUENCE_LEN = 256
-BATCH_SIZE = 8
+BATCH_SIZE = 64
 SHUFFLE_BUFFER = 10_000
 N_EMBEDS = 512
 
@@ -163,3 +163,8 @@ class LayerNormalization(tf.keras.layers.Layer):
 def softmax_with_temperature(logits: tf.Tensor, temperature: float = 1.0) -> tf.Tensor:
     logits = logits / temperature
     return tf.nn.softmax(logits)
+
+
+# ----------------------------
+# Attention Mechanism
+# ----------------------------
