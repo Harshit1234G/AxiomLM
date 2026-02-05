@@ -77,6 +77,8 @@ class LMDatasetLoader:
             lambda x: (x[:-1], x[1:]),
             num_parallel_calls= AUTOTUNE
         )
+        # changing datatype
+        ds = ds.map(lambda x, y: (tf.cast(x, tf.float32), y))
 
         if self.shuffle_buffer is not None:
             ds = ds.shuffle(self.shuffle_buffer)
