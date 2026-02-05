@@ -12,6 +12,7 @@ SHUFFLE_BUFFER = 10_000
 N_EMBEDS = 512
 DROPOUT_RATE = 0.2
 N_HEADS = 8
+N_BLOCKS = 6
 
 
 # ----------------------------
