@@ -10,9 +10,10 @@ SEQUENCE_LEN = 256
 BATCH_SIZE = 64
 SHUFFLE_BUFFER = 10_000
 N_EMBEDS = 512
-DROPOUT_RATE = 0.2
+DROPOUT_RATE = 0.1
 N_HEADS = 8
-N_BLOCKS = 6
+N_BLOCKS = 4
+N_EPOCHS = 3
 
 
 # ----------------------------
@@ -33,8 +34,8 @@ class LMDatasetLoader:
         *,
         seq_len: int = SEQUENCE_LEN,
         batch_size: int = BATCH_SIZE,
-        shuffle_buffer: int | None = None,
-        cache: bool = False
+        shuffle_buffer: int = SHUFFLE_BUFFER,
+        cache: bool = True
     ) -> None:
         self.tokenizer = tokenizer
         self.seq_len = seq_len
@@ -81,14 +82,12 @@ class LMDatasetLoader:
         # changing datatype
         ds = ds.map(lambda x, y: (tf.cast(x, tf.float32), y))
 
-        if self.shuffle_buffer is not None:
-            ds = ds.shuffle(self.shuffle_buffer)
-
+        ds = ds.shuffle(self.shuffle_buffer)
         ds = ds.batch(self.batch_size)
         if self.cache:
             ds = ds.cache()
-            
         ds = ds.prefetch(AUTOTUNE)
+        
         return ds
     
 
@@ -172,6 +171,7 @@ class LayerNormalization(tf.keras.layers.Layer):
         }
 
 
+@tf.keras.utils.register_keras_serializable()
 def softmax_with_temperature(logits: tf.Tensor, *, temperature: float = 1.0) -> tf.Tensor:
     logits = logits / temperature
     return tf.nn.softmax(logits)
@@ -305,3 +305,16 @@ class TransformerBlock(tf.keras.layers.Layer):
             'n_heads': self.n_heads,
             'dropout_rate': self.dropout_rate
         }
+
+
+# ----------------------------
+# Metric
+# ----------------------------
+@tf.keras.utils.register_keras_serializable()
+def perplexity(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    cross_entropy = tf.keras.losses.sparse_categorical_crossentropy(
+        y_true, y_pred, from_logits= True
+    )
+    mean_cross_entropy = tf.reduce_mean(cross_entropy)
+    ppl = tf.exp(mean_cross_entropy)
+    return ppl
