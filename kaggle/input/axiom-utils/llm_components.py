@@ -95,6 +95,7 @@ class LMDatasetLoader:
 # --------------------------------
 # Sinusoidal Positional Encoding
 # --------------------------------
+@tf.keras.utils.register_keras_serializable()
 class PositionalEncoding(tf.keras.layers.Layer):
     def __init__(
         self,
@@ -138,6 +139,7 @@ class PositionalEncoding(tf.keras.layers.Layer):
 # ----------------------------
 # Layer Normalization
 # ----------------------------
+@tf.keras.utils.register_keras_serializable()
 class LayerNormalization(tf.keras.layers.Layer):
     def __init__(self, *, epsilon: float = 1e-3, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -178,6 +180,7 @@ def softmax_with_temperature(logits: tf.Tensor, *, temperature: float = 1.0) -> 
 # ----------------------------
 # Attention Mechanism
 # ----------------------------
+@tf.keras.utils.register_keras_serializable()
 class MultiHeadedAttention(tf.keras.layers.Layer):
     def __init__(
         self, 
@@ -231,6 +234,7 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         return self.proj(out)
 
 
+@tf.keras.utils.register_keras_serializable()
 class FeedForward(tf.keras.layers.Layer):
     def __init__(
         self, 
@@ -258,6 +262,7 @@ class FeedForward(tf.keras.layers.Layer):
         return self.net(x)
     
 
+@tf.keras.utils.register_keras_serializable()
 class TransformerBlock(tf.keras.layers.Layer):
     def __init__(
         self,
