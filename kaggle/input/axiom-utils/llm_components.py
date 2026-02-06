@@ -319,9 +319,12 @@ class TransformerBlock(tf.keras.layers.Layer):
 # ----------------------------
 @tf.keras.utils.register_keras_serializable()
 def perplexity(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-    cross_entropy = tf.keras.losses.sparse_categorical_crossentropy(
+    loss = tf.keras.losses.sparse_categorical_crossentropy(
         y_true, y_pred, from_logits= True
     )
-    mean_cross_entropy = tf.reduce_mean(cross_entropy)
-    ppl = tf.exp(mean_cross_entropy)
-    return ppl
+
+    mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
+    loss = loss * mask
+
+    mean_loss = tf.reduce_sum(loss) / tf.reduce_sum(mask)
+    return tf.exp(mean_loss)
