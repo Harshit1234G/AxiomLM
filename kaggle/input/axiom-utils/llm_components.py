@@ -34,29 +34,30 @@ class LMDatasetLoader:
         *,
         seq_len: int = SEQUENCE_LEN,
         batch_size: int = BATCH_SIZE,
-        shuffle_buffer: int = SHUFFLE_BUFFER,
-        cache: bool = True
+        shuffle_buffer: int = SHUFFLE_BUFFER
     ) -> None:
         self.tokenizer = tokenizer
         self.seq_len = seq_len
         self.batch_size = batch_size
         self.shuffle_buffer = shuffle_buffer
-        self.cache = cache
 
-    def sp_tokenize(self, line: tf.Tensor) -> tf.Tensor:
-        tokens = self.tokenizer.encode(line.numpy().decode('utf-8'), out_type= int)
+    def _sp_tokenize(self, line: tf.Tensor) -> tf.Tensor:
+        tokens = self.tokenizer.encode(
+            line.numpy().decode('utf-8'), 
+            out_type= int
+        )
         return tf.constant(tokens, dtype= tf.int32)
 
-    def tf_sp_tokenize(self, line: tf.Tensor) -> tf.Tensor:
+    def _tf_sp_tokenize(self, line: tf.Tensor) -> tf.Tensor:
         tokens = tf.py_function(
-            func= self.sp_tokenize,
+            func= self._sp_tokenize,
             inp= [line],
             Tout= tf.int32
         )
         tokens.set_shape([None])
         return tokens
     
-    def create(self, text_file: str) -> tf.data.Dataset:
+    def create(self, text_file: str, training: bool) -> tf.data.Dataset:
         AUTOTUNE = tf.data.AUTOTUNE
 
         # Loading file
@@ -64,28 +65,34 @@ class LMDatasetLoader:
 
         # Tokenize
         ds = ds.map(
-            self.tf_sp_tokenize,
+            self._tf_sp_tokenize,
             num_parallel_calls= AUTOTUNE
         )
         # Flatten into one continuous token stream
-        ds = ds.flat_map(
-            lambda x: tf.data.Dataset.from_tensor_slices(x)
+        ds = ds.flat_map(tf.data.Dataset.from_tensor_slices)
+
+        # create sliding windows of tokens
+        ds = ds.window(
+            self.seq_len + 1,
+            shift= self.seq_len,
+            drop_remainder= True,
         )
-        # creating sequences of length (seq_len + 1)
-        ds = ds.batch(self.seq_len + 1, drop_remainder= True)
+
+        ds = ds.flat_map(
+            lambda w: w.batch(self.seq_len + 1, drop_remainder= True)
+        )
 
         # Split into (input, target)
         ds = ds.map(
             lambda x: (x[:-1], x[1:]),
             num_parallel_calls= AUTOTUNE
         )
-        # changing datatype
-        ds = ds.map(lambda x, y: (tf.cast(x, tf.float32), y))
 
-        ds = ds.shuffle(self.shuffle_buffer)
-        ds = ds.batch(self.batch_size)
-        if self.cache:
-            ds = ds.cache()
+        if training:
+            ds = ds.shuffle(self.shuffle_buffer)
+            ds = ds.repeat()
+
+        ds = ds.batch(self.batch_size, drop_remainder= True)
         ds = ds.prefetch(AUTOTUNE)
         
         return ds
