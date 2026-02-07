@@ -208,17 +208,24 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
-        assert n_embeds % n_heads == 0
+        if n_embeds % n_heads != 0:
+            raise ValueError('n_embeds must be divisible by n_heads')
 
+        self.n_embeds = n_embeds
         self.n_heads = n_heads
         self.head_dim = n_embeds // n_heads
         self.scale = self.head_dim ** -0.5
 
-        self.qkv = tf.keras.layers.Dense(
-            3 * n_embeds,
-            use_bias= False
-        )
+        self.qkv = tf.keras.layers.Dense(3 * n_embeds, use_bias= False)
         self.proj = tf.keras.layers.Dense(n_embeds)
+
+    def build(self, input_shape):
+        # causal mask (cached)
+        T = input_shape[1]
+        mask = tf.linalg.band_part(tf.ones((T, T)), -1, 0)
+        self.causal_mask = tf.reshape(mask, (1, 1, T, T))
+
+        self.built = True
 
     def call(self, x):
         B = tf.shape(x)[0]
@@ -237,17 +244,27 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
 
         att = tf.matmul(q, k, transpose_b= True) * self.scale
 
-        mask = tf.linalg.band_part(tf.ones((T, T)), -1, 0)
-        mask = tf.reshape(mask, (1, 1, T, T))
-        att = tf.where(mask == 0, -1e9, att)
+        att = tf.where(
+            self.causal_mask[:, :, :T, :T] == 0,
+            tf.cast(-1e4, att.dtype),
+            att,
+        )
 
         att = tf.nn.softmax(att, axis= -1)
 
         out = tf.matmul(att, v)  # (B, H, T, D)
         out = tf.transpose(out, (0, 2, 1, 3))
-        out = tf.reshape(out, (B, T, -1))
+        out = tf.reshape(out, (B, T, self.n_embeds))
 
         return self.proj(out)
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'n_embeds': self.n_embeds,
+            'n_heads': self.n_heads,
+        })
+        return config
 
 
 @tf.keras.utils.register_keras_serializable()
