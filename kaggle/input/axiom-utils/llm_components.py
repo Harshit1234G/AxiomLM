@@ -274,23 +274,30 @@ class FeedForward(tf.keras.layers.Layer):
         n_embed: int,
         *,
         activation: str = 'gelu',
-        kernel_initializer: str = 'he_normal',
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
+
+        self.n_embed = n_embed
         self.activation = tf.keras.activations.get(activation)
 
-        self.net = tf.keras.Sequential([
-            tf.keras.layers.Dense(
-                4 * n_embed, 
-                activation= self.activation,
-                kernel_initializer= kernel_initializer
-            ),
-            tf.keras.layers.Dense(n_embed)
-        ])
+        self.fc1 = tf.keras.layers.Dense(
+            4 * n_embed,
+            activation= self.activation,
+            kernel_initializer= tf.keras.initializers.GlorotUniform(),
+        )
+        self.fc2 = tf.keras.layers.Dense(
+            n_embed,
+            kernel_initializer=tf.keras.initializers.GlorotUniform(),
+        )
 
     def call(self, x):
-        return self.net(x)
+        return self.fc2(self.fc1(x))
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({'n_embed': self.n_embed})
+        return config
     
 
 @tf.keras.utils.register_keras_serializable()
