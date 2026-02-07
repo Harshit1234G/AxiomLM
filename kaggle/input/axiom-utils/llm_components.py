@@ -1,5 +1,4 @@
 import tensorflow as tf
-import numpy as np
 from sentencepiece import SentencePieceProcessor
 
 
@@ -42,14 +41,14 @@ class LMDatasetLoader:
         self.batch_size = batch_size
         self.shuffle_buffer = shuffle_buffer
 
-    def _sp_tokenize(self, line: tf.Tensor) -> tf.Tensor:
+    def _sp_tokenize(self, line):
         tokens = self.tokenizer.encode(
             line.numpy().decode('utf-8'), 
             out_type= int
         )
         return tf.constant(tokens, dtype= tf.int32)
 
-    def _tf_sp_tokenize(self, line: tf.Tensor) -> tf.Tensor:
+    def _tf_sp_tokenize(self, line):
         tokens = tf.py_function(
             func= self._sp_tokenize,
             inp= [line],
@@ -58,7 +57,7 @@ class LMDatasetLoader:
         tokens.set_shape([None])
         return tokens
     
-    def create(self, text_file: str, training: bool) -> tf.data.Dataset:
+    def create(self, text_file: str, cache: bool, training: bool) -> tf.data.Dataset:
         AUTOTUNE = tf.data.AUTOTUNE
 
         # Loading file
@@ -94,6 +93,8 @@ class LMDatasetLoader:
             ds = ds.repeat()
 
         ds = ds.batch(self.batch_size, drop_remainder= True)
+        if cache:
+            ds = ds.cache()
         ds = ds.prefetch(AUTOTUNE)
         
         return ds
@@ -107,40 +108,54 @@ class PositionalEncoding(tf.keras.layers.Layer):
     def __init__(
         self,
         *,
-        max_seq_len: int = SEQUENCE_LEN,
-        embed_size: int = N_EMBEDS,
-        dtype: tf.dtypes.DType = tf.float32,
+        max_seq_len: int,
+        embed_size: int,
         **kwargs
-    ) -> None:
-        super().__init__(dtype= dtype, **kwargs)
+    ):
+        super().__init__(**kwargs)
         self.max_seq_len = max_seq_len
         self.embed_size = embed_size
-        assert self.embed_size % 2 == 0, 'embed_size must be even'
 
-        # p -> each column is a position index
-        # i -> each row corresponds to even embedding dimensions
-        p, i = np.meshgrid(
-            np.arange(self.max_seq_len),
-            2 * np.arange(self.embed_size // 2)
+        if embed_size % 2 != 0:
+            raise ValueError('embed_size must be even')
+
+        self.supports_masking = True
+
+    def build(self, input_shape):
+        position = tf.range(self.max_seq_len, dtype= tf.float32)[:, tf.newaxis]
+        div_term = tf.exp(
+            tf.range(0, self.embed_size, 2, dtype= tf.float32)
+            * (-tf.math.log(10000.0) / self.embed_size)
         )
-        # initializing PE matrix
-        pos_emb = np.empty((1, self.max_seq_len, self.embed_size))   # (Batch, Positions, Embedding dimensions)
-        pos_emb[0, :, ::2] = np.sin(p / 10_000 ** (i / self.embed_size)).T    # sine on even dimensions
-        pos_emb[0, :, 1::2] = np.cos(p / 10_000 ** (i / self.embed_size)).T   # cosine on odd dimensions
-        self.pos_encodings = tf.constant(pos_emb.astype(self.dtype))
-        self.supports_masking = True    # propagates the input's automatic mask to next layer
 
-    def call(self, inputs: tf.Tensor) -> tf.Tensor:
-        batch_max_length = tf.shape(inputs)[1]
-        return inputs + self.pos_encodings[:, :batch_max_length]
-    
-    def get_config(self) -> dict:
-        base_config = super().get_config()
-        return {
-            **base_config,
+        pe = tf.zeros((self.max_seq_len, self.embed_size), dtype= tf.float32)
+        pe = tf.tensor_scatter_nd_update(
+            pe,
+            indices= tf.reshape(tf.range(0, self.embed_size, 2), (-1, 1)),
+            updates= tf.sin(position * div_term)
+        )
+        pe = tf.tensor_scatter_nd_update(
+            pe,
+            indices= tf.reshape(tf.range(1, self.embed_size, 2), (-1, 1)),
+            updates= tf.cos(position * div_term)
+        )
+
+        pe = pe[tf.newaxis, ...]  # (1, max_seq_len, embed_size)
+
+        self.pos_encodings = tf.cast(pe, self.compute_dtype)
+        self.built = True
+
+    def call(self, inputs):
+        seq_len = tf.shape(inputs)[1]
+        return inputs + self.pos_encodings[:, :seq_len, :]
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
             'max_seq_len': self.max_seq_len,
-            'embed_size': self.embed_size
-        }
+            'embed_size': self.embed_size,
+        })
+        return config
 
 
 # ----------------------------
@@ -167,7 +182,7 @@ class LayerNormalization(tf.keras.layers.Layer):
             trainable= True
         )
 
-    def call(self, X: tf.Tensor) -> tf.Tensor:
+    def call(self, X):
         mean, variance = tf.nn.moments(X, axes= -1, keepdims= True)
         return self.gamma * (X - mean) / (tf.sqrt(variance + self.epsilon)) + self.beta
 
@@ -203,7 +218,7 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         )
         self.proj = tf.keras.layers.Dense(n_embeds)
 
-    def call(self, x: tf.Tensor) -> tf.Tensor:
+    def call(self, x):
         B = tf.shape(x)[0]
         T = tf.shape(x)[1]
 
@@ -255,7 +270,7 @@ class FeedForward(tf.keras.layers.Layer):
             tf.keras.layers.Dense(n_embed)
         ])
 
-    def call(self, x: tf.Tensor) -> tf.Tensor:
+    def call(self, x):
         return self.net(x)
     
 
@@ -283,7 +298,7 @@ class TransformerBlock(tf.keras.layers.Layer):
 
         self.ffwd = FeedForward(n_embed= self.n_embeds)
 
-    def call(self, x: tf.Tensor, training: bool = False) -> tf.Tensor:
+    def call(self, x, training: bool = False):
         x = x + self.attn(self.ln1(x), training= training)
         x = x + self.ffwd(self.ln2(x), training= training)
         return x
@@ -301,7 +316,7 @@ class TransformerBlock(tf.keras.layers.Layer):
 # Metric
 # ----------------------------
 @tf.keras.utils.register_keras_serializable()
-def perplexity(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+def perplexity(y_true, y_pred):
     loss = tf.keras.losses.sparse_categorical_crossentropy(
         y_true, y_pred, from_logits= True
     )
