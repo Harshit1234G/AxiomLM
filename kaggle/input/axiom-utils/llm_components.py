@@ -163,35 +163,37 @@ class PositionalEncoding(tf.keras.layers.Layer):
 # ----------------------------
 @tf.keras.utils.register_keras_serializable()
 class LayerNormalization(tf.keras.layers.Layer):
-    def __init__(self, *, epsilon: float = 1e-3, **kwargs) -> None:
+    def __init__(self, *, epsilon: float = 1e-4, **kwargs):
         super().__init__(**kwargs)
         self.epsilon = epsilon
 
     def build(self, input_shape: tuple[int, ...]) -> None:
+        dim = input_shape[-1],
         self.gamma = self.add_weight(
             name= 'gamma', 
-            shape= input_shape[-1:],
+            shape= dim,
             initializer= 'ones',
             trainable= True
         )
         
         self.beta = self.add_weight(
             name= 'beta', 
-            shape= input_shape[-1:],
+            shape= dim,
             initializer= 'zeros',
             trainable= True
         )
+        super().build(input_shape)
 
     def call(self, X):
+        X = tf.cast(X, self.compute_dtype)
         mean, variance = tf.nn.moments(X, axes= -1, keepdims= True)
-        return self.gamma * (X - mean) / (tf.sqrt(variance + self.epsilon)) + self.beta
+        normalized = (X - mean) / tf.sqrt(variance + self.epsilon)
+        return self.gamma * normalized + self.beta
 
     def get_config(self) -> dict:
-        base_config = super().get_config()
-        return {
-            **base_config,
-            'epsilon': self.epsilon
-        }
+        config = super().get_config()
+        config.update({'epsilon': self.epsilon})
+        return config
 
 
 # ----------------------------
