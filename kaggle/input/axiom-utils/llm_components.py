@@ -400,7 +400,7 @@ class GPT(tf.keras.Model):
             for _ in range(n_blocks)
         ]
 
-        self.ln_f = tf.keras.layers.LayerNormalization()
+        self.ln_f = LayerNormalization()
 
         self.lm_head = tf.keras.layers.Dense(
             vocab_size, use_bias= False
