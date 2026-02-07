@@ -30,12 +30,14 @@ class LMDatasetLoader:
     def __init__(
         self,
         tokenizer: SentencePieceProcessor,
+        shift: int,
         *,
         seq_len: int = SEQUENCE_LEN,
         batch_size: int = BATCH_SIZE,
         shuffle_buffer: int = SHUFFLE_BUFFER
     ) -> None:
         self.tokenizer = tokenizer
+        self.shift = shift
         self.seq_len = seq_len
         self.batch_size = batch_size
         self.shuffle_buffer = shuffle_buffer
@@ -73,7 +75,7 @@ class LMDatasetLoader:
         # create sliding windows of tokens
         ds = ds.window(
             self.seq_len + 1,
-            shift= self.seq_len,
+            shift= self.shift,
             drop_remainder= True,
         )
 
