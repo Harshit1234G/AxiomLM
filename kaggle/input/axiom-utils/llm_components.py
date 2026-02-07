@@ -18,7 +18,7 @@ N_EPOCHS = 8
 # ----------------------------
 # Tokenizer
 # ----------------------------
-def load_sp_tokenizer(path: str = 'sp_tokenizer.model') -> SentencePieceProcessor:
+def load_sp_tokenizer(path: str) -> SentencePieceProcessor:
     sp = SentencePieceProcessor()
     sp.load(path)
     return sp
