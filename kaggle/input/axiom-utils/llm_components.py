@@ -163,7 +163,7 @@ class PositionalEncoding(tf.keras.layers.Layer):
 # ----------------------------
 @tf.keras.utils.register_keras_serializable()
 class LayerNormalization(tf.keras.layers.Layer):
-    def __init__(self, *, epsilon: float = 1e-4, **kwargs):
+    def __init__(self, *, epsilon: float = 1e-5, **kwargs):
         super().__init__(**kwargs)
         self.epsilon = epsilon
 
@@ -247,7 +247,7 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         att = tf.where(
             self.causal_mask[:, :, :T, :T] == 0,
             tf.cast(-1e4, att.dtype),
-            att,
+            att
         )
 
         att = tf.nn.softmax(att, axis= -1)
@@ -329,26 +329,48 @@ class TransformerBlock(tf.keras.layers.Layer):
         x = x + self.ffwd(self.ln2(x), training= training)
         return x
 
-    def get_config(self) -> dict:
-        base_config = super().get_config()
-        return {
-            **base_config,
+    def get_config(self):
+        config = super().get_config()
+        config.update({
             'n_embeds': self.n_embeds,
-            'n_heads': self.n_heads
-        }
+            'n_heads': self.n_heads,
+        })
+        return config
 
 
 # ----------------------------
 # Metric
 # ----------------------------
 @tf.keras.utils.register_keras_serializable()
-def perplexity(y_true, y_pred):
-    loss = tf.keras.losses.sparse_categorical_crossentropy(
-        y_true, y_pred, from_logits= True
-    )
+class Perplexity(tf.keras.metrics.Metric):
+    def __init__(self, name: str = 'perplexity', **kwargs):
+        super().__init__(name= name, **kwargs)
 
-    mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
-    loss = loss * mask
+        self.total_loss = self.add_weight(
+            name= 'total_loss', 
+            initializer= 'zeros'
+        )
+        self.total_tokens = self.add_weight(
+            name= 'total_tokens', 
+            initializer= 'zeros'
+        )
 
-    mean_loss = tf.reduce_sum(loss) / tf.reduce_sum(mask)
-    return tf.exp(mean_loss)
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        loss = tf.keras.losses.sparse_categorical_crossentropy(
+            y_true, 
+            y_pred, 
+            from_logits= True
+        )
+
+        mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
+        loss = loss * mask
+
+        self.total_loss.assign_add(tf.reduce_sum(loss))
+        self.total_tokens.assign_add(tf.reduce_sum(mask))
+
+    def result(self):
+        return tf.exp(self.total_loss / self.total_tokens)
+
+    def reset_states(self):
+        self.total_loss.assign(0.0)
+        self.total_tokens.assign(0.0)
