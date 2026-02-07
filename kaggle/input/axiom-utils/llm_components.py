@@ -10,10 +10,9 @@ SEQUENCE_LEN = 256
 BATCH_SIZE = 64
 SHUFFLE_BUFFER = 10_000
 N_EMBEDS = 512
-DROPOUT_RATE = 0.1
 N_HEADS = 8
-N_BLOCKS = 4
-N_EPOCHS = 3
+N_BLOCKS = 6
+N_EPOCHS = 8
 
 
 # ----------------------------
@@ -178,12 +177,6 @@ class LayerNormalization(tf.keras.layers.Layer):
         }
 
 
-@tf.keras.utils.register_keras_serializable()
-def softmax_with_temperature(logits: tf.Tensor, *, temperature: float = 1.0) -> tf.Tensor:
-    logits = logits / temperature
-    return tf.nn.softmax(logits)
-
-
 # ----------------------------
 # Attention Mechanism
 # ----------------------------
@@ -193,7 +186,6 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         self, 
         n_embeds: int, 
         n_heads: int, 
-        dropout_rate: int, 
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
@@ -208,9 +200,8 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
             use_bias= False
         )
         self.proj = tf.keras.layers.Dense(n_embeds)
-        self.dropout = tf.keras.layers.Dropout(dropout_rate)
 
-    def call(self, x: tf.Tensor, training: bool = False) -> tf.Tensor:
+    def call(self, x: tf.Tensor) -> tf.Tensor:
         B = tf.shape(x)[0]
         T = tf.shape(x)[1]
 
@@ -232,7 +223,6 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         att = tf.where(mask == 0, -1e9, att)
 
         att = tf.nn.softmax(att, axis= -1)
-        att = self.dropout(att, training= training)
 
         out = tf.matmul(att, v)  # (B, H, T, D)
         out = tf.transpose(out, (0, 2, 1, 3))
@@ -245,8 +235,7 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
 class FeedForward(tf.keras.layers.Layer):
     def __init__(
         self, 
-        n_embed: int, 
-        dropout_rate: float,
+        n_embed: int,
         *,
         activation: str = 'gelu',
         kernel_initializer: str = 'he_normal',
@@ -261,8 +250,7 @@ class FeedForward(tf.keras.layers.Layer):
                 activation= self.activation,
                 kernel_initializer= kernel_initializer
             ),
-            tf.keras.layers.Dense(n_embed),
-            tf.keras.layers.Dropout(dropout_rate)
+            tf.keras.layers.Dense(n_embed)
         ])
 
     def call(self, x: tf.Tensor) -> tf.Tensor:
@@ -276,28 +264,22 @@ class TransformerBlock(tf.keras.layers.Layer):
         *,
         n_embeds: int = N_EMBEDS,
         n_heads: int = N_HEADS,
-        dropout_rate: float = DROPOUT_RATE,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
 
         self.n_embeds = n_embeds
         self.n_heads = n_heads
-        self.dropout_rate = dropout_rate
 
         self.ln1 = LayerNormalization()
         self.ln2 = LayerNormalization()
 
         self.attn = MultiHeadedAttention(
             n_embeds= self.n_embeds,
-            n_heads= self.n_heads,
-            dropout_rate= self.dropout_rate
+            n_heads= self.n_heads
         )
 
-        self.ffwd = FeedForward(
-            n_embed= self.n_embeds,
-            dropout_rate= self.dropout_rate
-        )
+        self.ffwd = FeedForward(n_embed= self.n_embeds)
 
     def call(self, x: tf.Tensor, training: bool = False) -> tf.Tensor:
         x = x + self.attn(self.ln1(x), training= training)
@@ -309,8 +291,7 @@ class TransformerBlock(tf.keras.layers.Layer):
         return {
             **base_config,
             'n_embeds': self.n_embeds,
-            'n_heads': self.n_heads,
-            'dropout_rate': self.dropout_rate
+            'n_heads': self.n_heads
         }
 
 
