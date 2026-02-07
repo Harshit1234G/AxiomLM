@@ -405,6 +405,7 @@ class GPT(tf.keras.Model):
         self.lm_head = tf.keras.layers.Dense(
             vocab_size, use_bias= False
         )
+        self.lm_head.kernel = self.token_emb.embeddings
 
     def call(self, input_ids, training=False):
         x = self.token_emb(input_ids)
