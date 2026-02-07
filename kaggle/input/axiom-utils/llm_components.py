@@ -1,19 +1,6 @@
 import tensorflow as tf
 from sentencepiece import SentencePieceProcessor
 
-
-# ----------------------------
-# Hyperparameters
-# ----------------------------
-SEQUENCE_LEN = 256
-BATCH_SIZE = 64
-SHUFFLE_BUFFER = 10_000
-N_EMBEDS = 512
-N_HEADS = 8
-N_BLOCKS = 6
-N_EPOCHS = 8
-
-
 # ----------------------------
 # Tokenizer
 # ----------------------------
@@ -30,10 +17,9 @@ class LMDatasetLoader:
         self,
         tokenizer: SentencePieceProcessor,
         shift: int,
-        *,
-        seq_len: int = SEQUENCE_LEN,
-        batch_size: int = BATCH_SIZE,
-        shuffle_buffer: int = SHUFFLE_BUFFER
+        seq_len: int,
+        batch_size: int,
+        shuffle_buffer: int
     ) -> None:
         self.tokenizer = tokenizer
         self.shift = shift
@@ -57,7 +43,12 @@ class LMDatasetLoader:
         tokens.set_shape([None])
         return tokens
     
-    def create(self, text_file: str, cache: bool, training: bool) -> tf.data.Dataset:
+    def create(
+        self, 
+        text_file: str, 
+        cache: bool, 
+        training: bool
+    ) -> tf.data.Dataset:
         AUTOTUNE = tf.data.AUTOTUNE
 
         # Loading file
@@ -99,7 +90,6 @@ class LMDatasetLoader:
         
         return ds
     
-
 # --------------------------------
 # Sinusoidal Positional Encoding
 # --------------------------------
@@ -157,7 +147,6 @@ class PositionalEncoding(tf.keras.layers.Layer):
         })
         return config
 
-
 # ----------------------------
 # Layer Normalization
 # ----------------------------
@@ -194,7 +183,6 @@ class LayerNormalization(tf.keras.layers.Layer):
         config = super().get_config()
         config.update({'epsilon': self.epsilon})
         return config
-
 
 # ----------------------------
 # Attention Mechanism
@@ -304,9 +292,8 @@ class FeedForward(tf.keras.layers.Layer):
 class TransformerBlock(tf.keras.layers.Layer):
     def __init__(
         self,
-        *,
-        n_embeds: int = N_EMBEDS,
-        n_heads: int = N_HEADS,
+        n_embeds: int,
+        n_heads: int,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
@@ -336,7 +323,6 @@ class TransformerBlock(tf.keras.layers.Layer):
             'n_heads': self.n_heads,
         })
         return config
-
 
 # ----------------------------
 # Metric
@@ -374,3 +360,70 @@ class Perplexity(tf.keras.metrics.Metric):
     def reset_states(self):
         self.total_loss.assign(0.0)
         self.total_tokens.assign(0.0)
+
+# ----------------------------------
+# Generative Pretrained Transformer
+# ----------------------------------
+@tf.keras.utils.register_keras_serializable()
+class GPT(tf.keras.Model):
+    def __init__(
+        self,
+        *,
+        vocab_size: int,
+        seq_len: int,
+        n_embeds: int,
+        n_heads: int,
+        n_blocks: int,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+
+        self.vocab_size = vocab_size
+        self.seq_len = seq_len
+        self.n_embeds = n_embeds
+        self.n_heads = n_heads
+        self.n_blocks = n_blocks
+
+        self.token_emb = tf.keras.layers.Embedding(
+            vocab_size, n_embeds
+        )
+        self.pos_emb = PositionalEncoding(
+            max_seq_len= seq_len,
+            embed_size= n_embeds,
+        )
+
+        self.blocks = [
+            TransformerBlock(
+                n_embeds= n_embeds,
+                n_heads= n_heads
+            )
+            for _ in range(n_blocks)
+        ]
+
+        self.ln_f = tf.keras.layers.LayerNormalization()
+
+        self.lm_head = tf.keras.layers.Dense(
+            vocab_size, use_bias= False
+        )
+
+    def call(self, input_ids, training=False):
+        x = self.token_emb(input_ids)
+        x = self.pos_emb(x)
+
+        for block in self.blocks:
+            x = block(x, training= training)
+
+        x = self.ln_f(x)
+        logits = self.lm_head(x)
+        return logits
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'vocab_size': self.vocab_size,
+            'seq_len': self.seq_len,
+            'n_embeds': self.n_embeds,
+            'n_heads': self.n_heads,
+            'n_blocks': self.n_blocks,
+        })
+        return config
