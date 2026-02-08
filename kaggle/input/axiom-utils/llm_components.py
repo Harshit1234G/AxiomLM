@@ -343,8 +343,12 @@ class GPT(tf.keras.Model):
         self.ln_f = LayerNormalization()
 
     def call(self, input_ids, training: bool = False):
-        x = self.token_emb(input_ids)
-        x = self.pos_emb(x)
+        seq_len = tf.shape(input_ids)[1]
+
+        token_embeddings = self.token_emb(input_ids)
+        positions = tf.range(seq_len)
+        pos_embeddings = self.pos_emb(positions)
+        x = token_embeddings + pos_embeddings
 
         for block in self.blocks:
             x = block(x, training= training)
