@@ -403,11 +403,6 @@ class GPT(tf.keras.Model):
 
         self.ln_f = LayerNormalization()
 
-        self.lm_head = tf.keras.layers.Dense(
-            vocab_size, use_bias= False
-        )
-        self.lm_head.kernel = self.token_emb.embeddings
-
     def call(self, input_ids, training: bool = False):
         x = self.token_emb(input_ids)
         x = self.pos_emb(x)
@@ -416,7 +411,13 @@ class GPT(tf.keras.Model):
             x = block(x, training= training)
 
         x = self.ln_f(x)
-        logits = self.lm_head(x)
+        
+        # weight tying, Unembedding matrix is transpose of embedding
+        logits = tf.matmul(
+            x,
+            self.token_emb.embeddings,
+            transpose_b= True
+        )
         return logits
 
     def get_config(self):
