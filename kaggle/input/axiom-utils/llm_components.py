@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 from sentencepiece import SentencePieceProcessor
 
 # ----------------------------
@@ -101,7 +102,7 @@ class PositionalEncoding(tf.keras.layers.Layer):
         max_seq_len: int,
         embed_size: int,
         **kwargs
-    ):
+    ) -> None:
         super().__init__(**kwargs)
         self.max_seq_len = max_seq_len
         self.embed_size = embed_size
@@ -156,7 +157,7 @@ class LayerNormalization(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.epsilon = epsilon
 
-    def build(self, input_shape: tuple[int, ...]) -> None:
+    def build(self, input_shape):
         dim = input_shape[-1],
         self.gamma = self.add_weight(
             name= 'gamma', 
@@ -179,7 +180,7 @@ class LayerNormalization(tf.keras.layers.Layer):
         normalized = (X - mean) / tf.sqrt(variance + self.epsilon)
         return self.gamma * normalized + self.beta
 
-    def get_config(self) -> dict:
+    def get_config(self):
         config = super().get_config()
         config.update({'epsilon': self.epsilon})
         return config
@@ -375,7 +376,7 @@ class GPT(tf.keras.Model):
         n_heads: int,
         n_blocks: int,
         **kwargs
-    ):
+    ) -> None:
         super().__init__(**kwargs)
 
         self.vocab_size = vocab_size
@@ -407,7 +408,7 @@ class GPT(tf.keras.Model):
         )
         self.lm_head.kernel = self.token_emb.embeddings
 
-    def call(self, input_ids, training=False):
+    def call(self, input_ids, training: bool = False):
         x = self.token_emb(input_ids)
         x = self.pos_emb(x)
 
@@ -428,3 +429,38 @@ class GPT(tf.keras.Model):
             'n_blocks': self.n_blocks,
         })
         return config
+
+
+# ----------------------------
+# LR Schedule
+# ----------------------------
+class WarmupCosine(tf.keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(
+        self, 
+        base_lr: float, 
+        warmup_steps: int, 
+        total_steps: int, 
+        min_lr_ratio: float = 0.1
+    ) -> None:
+        super().__init__()
+        self.base_lr = base_lr
+        self.warmup_steps = warmup_steps
+        self.total_steps = total_steps
+        self.min_lr = base_lr * min_lr_ratio
+
+    def __call__(self, step):
+        step = tf.cast(step, tf.float32)
+
+        # Warmup
+        lr = tf.cond(
+            step < self.warmup_steps,
+            lambda: self.base_lr * step / self.warmup_steps,
+            lambda: self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (
+                1 + tf.cos(
+                    tf.constant(np.pi) *
+                    (step - self.warmup_steps) /
+                    (self.total_steps - self.warmup_steps)
+                )
+            )
+        )
+        return lr
