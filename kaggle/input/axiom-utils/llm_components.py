@@ -329,15 +329,16 @@ class GPT(tf.keras.Model):
         self.n_heads = n_heads
         self.n_blocks = n_blocks
 
-        self.token_emb = tf.keras.layers.Embedding(vocab_size, n_embeds)
-        self.pos_emb = tf.keras.layers.Embedding(seq_len, n_embeds)
+        self.token_emb = tf.keras.layers.Embedding(self.vocab_size, self.n_embeds)
+        self.pos_emb = tf.keras.layers.Embedding(self.seq_len, self.n_embeds)
+        self.position_ids = tf.range(self.seq_len)
 
         self.blocks = [
             TransformerBlock(
-                n_embeds= n_embeds,
-                n_heads= n_heads
+                n_embeds= self.n_embeds,
+                n_heads= self.n_heads
             )
-            for _ in range(n_blocks)
+            for _ in range(self.n_blocks)
         ]
 
         self.ln_f = LayerNormalization()
@@ -346,7 +347,7 @@ class GPT(tf.keras.Model):
         seq_len = tf.shape(input_ids)[1]
 
         token_embeddings = self.token_emb(input_ids)
-        positions = tf.range(seq_len)
+        positions = self.position_ids[:seq_len]
         pos_embeddings = self.pos_emb(positions)
         x = token_embeddings + pos_embeddings
 
