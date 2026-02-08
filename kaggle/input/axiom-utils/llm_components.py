@@ -90,63 +90,7 @@ class LMDatasetLoader:
         ds = ds.prefetch(AUTOTUNE)
         
         return ds
-    
-# --------------------------------
-# Sinusoidal Positional Encoding
-# --------------------------------
-@tf.keras.utils.register_keras_serializable()
-class PositionalEncoding(tf.keras.layers.Layer):
-    def __init__(
-        self,
-        *,
-        max_seq_len: int,
-        embed_size: int,
-        **kwargs
-    ) -> None:
-        super().__init__(**kwargs)
-        self.max_seq_len = max_seq_len
-        self.embed_size = embed_size
-
-        if embed_size % 2 != 0:
-            raise ValueError('embed_size must be even')
-
-        self.supports_masking = True
-
-    def build(self, input_shape):
-        position = tf.range(self.max_seq_len, dtype= tf.float32)[:, tf.newaxis]
-        div_term = tf.exp(
-            tf.range(0, self.embed_size, 2, dtype= tf.float32)
-            * (-tf.math.log(10000.0) / self.embed_size)
-        )
-
-        pe = tf.zeros((self.max_seq_len, self.embed_size), dtype= tf.float32)
-        pe = tf.tensor_scatter_nd_update(
-            pe,
-            indices= tf.reshape(tf.range(0, self.embed_size, 2), (-1, 1)),
-            updates= tf.sin(position * div_term)
-        )
-        pe = tf.tensor_scatter_nd_update(
-            pe,
-            indices= tf.reshape(tf.range(1, self.embed_size, 2), (-1, 1)),
-            updates= tf.cos(position * div_term)
-        )
-
-        pe = pe[tf.newaxis, ...]  # (1, max_seq_len, embed_size)
-
-        self.pos_encodings = tf.cast(pe, self.compute_dtype)
-        self.built = True
-
-    def call(self, inputs):
-        seq_len = tf.shape(inputs)[1]
-        return inputs + self.pos_encodings[:, :seq_len, :]
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            'max_seq_len': self.max_seq_len,
-            'embed_size': self.embed_size,
-        })
-        return config
+ 
 
 # ----------------------------
 # Layer Normalization
@@ -385,13 +329,8 @@ class GPT(tf.keras.Model):
         self.n_heads = n_heads
         self.n_blocks = n_blocks
 
-        self.token_emb = tf.keras.layers.Embedding(
-            vocab_size, n_embeds
-        )
-        self.pos_emb = PositionalEncoding(
-            max_seq_len= seq_len,
-            embed_size= n_embeds,
-        )
+        self.token_emb = tf.keras.layers.Embedding(vocab_size, n_embeds)
+        self.pos_emb = tf.keras.layers.Embedding(seq_len, n_embeds)
 
         self.blocks = [
             TransformerBlock(
@@ -411,7 +350,7 @@ class GPT(tf.keras.Model):
             x = block(x, training= training)
 
         x = self.ln_f(x)
-        
+
         # weight tying, Unembedding matrix is transpose of embedding
         logits = tf.matmul(
             x,
