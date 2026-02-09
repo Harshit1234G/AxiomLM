@@ -46,8 +46,7 @@ class LMDatasetLoader:
     
     def create(
         self, 
-        text_file: str, 
-        cache: bool, 
+        text_file: str,
         training: bool
     ) -> tf.data.Dataset:
         AUTOTUNE = tf.data.AUTOTUNE
@@ -85,8 +84,6 @@ class LMDatasetLoader:
             ds = ds.repeat()
 
         ds = ds.batch(self.batch_size, drop_remainder= True)
-        if cache:
-            ds = ds.cache()
         ds = ds.prefetch(AUTOTUNE)
         
         return ds
@@ -102,7 +99,7 @@ class LayerNormalization(tf.keras.layers.Layer):
         self.epsilon = epsilon
 
     def build(self, input_shape):
-        dim = input_shape[-1],
+        dim = input_shape[-1:]
         self.gamma = self.add_weight(
             name= 'gamma', 
             shape= dim,
@@ -152,14 +149,6 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         self.qkv = tf.keras.layers.Dense(3 * n_embeds, use_bias= False)
         self.proj = tf.keras.layers.Dense(n_embeds)
 
-    def build(self, input_shape):
-        # causal mask (cached)
-        T = input_shape[1]
-        mask = tf.linalg.band_part(tf.ones((T, T)), -1, 0)
-        self.causal_mask = tf.reshape(mask, (1, 1, T, T))
-
-        self.built = True
-
     def call(self, x):
         B = tf.shape(x)[0]
         T = tf.shape(x)[1]
@@ -177,11 +166,9 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
 
         att = tf.matmul(q, k, transpose_b= True) * self.scale
 
-        att = tf.where(
-            self.causal_mask[:, :, :T, :T] == 0,
-            tf.cast(-1e4, att.dtype),
-            att
-        )
+        mask = tf.linalg.band_part(tf.ones((T, T)), -1, 0)
+        mask = tf.reshape(mask, (1, 1, T, T))
+        att = tf.where(mask == 0, -1e9, att)
 
         att = tf.nn.softmax(att, axis= -1)
 
