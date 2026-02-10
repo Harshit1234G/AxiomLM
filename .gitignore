@@ -14,3 +14,4 @@ wikitext-103
 .vscode
 *.keras
 *.weights.h5
+checkpoints
