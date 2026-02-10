@@ -80,7 +80,7 @@ class LMDatasetLoader:
         )
 
         if training:
-            ds = ds.shuffle(self.shuffle_buffer)
+            ds = ds.shuffle(self.shuffle_buffer, reshuffle_each_iteration= True)
             ds = ds.repeat()
 
         ds = ds.batch(self.batch_size, drop_remainder= True)
