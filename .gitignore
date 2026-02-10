@@ -15,3 +15,4 @@ wikitext-103
 *.keras
 *.weights.h5
 checkpoints
+logs
