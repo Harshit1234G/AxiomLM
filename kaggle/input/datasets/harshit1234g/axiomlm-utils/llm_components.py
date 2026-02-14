@@ -366,7 +366,6 @@ class GPT(tf.keras.Model):
 # ----------------------------
 # LR Schedule
 # ----------------------------
-@tf.keras.utils.register_keras_serializable()
 class WarmupCosine(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __init__(
         self, 
