@@ -149,7 +149,15 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         self.qkv = tf.keras.layers.Dense(3 * n_embeds, use_bias= False)
         self.proj = tf.keras.layers.Dense(n_embeds)
 
-    def call(self, x):
+    def call(
+        self, 
+        x,
+        *,
+        past_k=None,
+        past_v=None,
+        use_cache: bool = False,
+        training: bool = False
+    ):
         B = tf.shape(x)[0]
         T = tf.shape(x)[1]
 
@@ -164,19 +172,34 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         k = tf.transpose(k, (0, 2, 1, 3))
         v = tf.transpose(v, (0, 2, 1, 3))
 
+        # KV cache
+        if past_k is not None and past_v is not None:
+            k = tf.concat([past_k, k], axis= 2)  # concat on sequence dim
+            v = tf.concat([past_v, v], axis= 2)
+
+        present_k = k
+        present_v = v
+
         att = tf.matmul(q, k, transpose_b= True) * self.scale
 
-        mask = tf.linalg.band_part(tf.ones((T, T)), -1, 0)
-        mask = tf.reshape(mask, (1, 1, T, T))
-        att = tf.where(mask == 0, -1e9, att)
+        # Training mode, full causal masking
+        if past_k is None:
+            mask = tf.linalg.band_part(tf.ones((T, T)), -1, 0)
+            mask = tf.reshape(mask, (1, 1, T, T))
+            att = tf.where(mask == 0, -1e9, att)
 
         att = tf.nn.softmax(att, axis= -1)
 
         out = tf.matmul(att, v)  # (B, H, T, D)
         out = tf.transpose(out, (0, 2, 1, 3))
         out = tf.reshape(out, (B, T, self.n_embeds))
+        out = self.proj(out)
 
-        return self.proj(out)
+        if use_cache:
+            return out, present_k, present_v
+
+        return out
+
     
     def get_config(self):
         config = super().get_config()
@@ -243,10 +266,33 @@ class TransformerBlock(tf.keras.layers.Layer):
 
         self.ffwd = FeedForward(n_embed= self.n_embeds)
 
-    def call(self, x, training: bool = False):
-        x = x + self.attn(self.ln1(x), training= training)
-        x = x + self.ffwd(self.ln2(x), training= training)
-        return x
+    def call(
+        self, 
+        x, 
+        *,
+        past_k=None,
+        past_v=None,
+        use_cache: bool = False,
+        training: bool = False
+    ):
+        # using cache
+        if use_cache:
+            attn_out, new_k, new_v = self.attn(
+                self.ln1(x),
+                past_k= past_k,
+                past_v= past_v,
+                use_cache= True,
+                training= training
+            )
+            x = x + attn_out
+            x = x + self.ffwd(self.ln2(x), training=training)
+            return x, new_k, new_v
+        
+        # normal behaviour
+        else:
+            x = x + self.attn(self.ln1(x), training= training)
+            x = x + self.ffwd(self.ln2(x), training= training)
+            return x
 
     def get_config(self):
         config = super().get_config()
@@ -330,16 +376,42 @@ class GPT(tf.keras.Model):
 
         self.ln_f = LayerNormalization()
 
-    def call(self, input_ids, training: bool = False):
+    def call(
+        self, 
+        input_ids, 
+        past=None,
+        use_cache: bool = False,
+        training: bool = False
+    ):
         seq_len = tf.shape(input_ids)[1]
 
         token_embeddings = self.token_emb(input_ids)
-        positions = self.position_ids[:seq_len]
+        if past is None:
+            positions = self.position_ids[:seq_len]
+
+        else:
+            past_len = tf.shape(past[0][0])[2]
+            positions = self.position_ids[past_len: past_len + seq_len]
+
         pos_embeddings = self.pos_emb(positions)
         x = token_embeddings + pos_embeddings
 
-        for block in self.blocks:
-            x = block(x, training= training)
+        new_past = [] if use_cache else None
+
+        for i, block in enumerate(self.blocks):
+            if use_cache:
+                past_k, past_v = (None, None) if past is None else past[i]
+                x, k, v = block(
+                    x,
+                    past_k= past_k,
+                    past_v= past_v,
+                    use_cache= True,
+                    training= training
+                )
+                new_past.append((k, v))
+
+            else:
+                x = block(x, training= training)
 
         x = self.ln_f(x)
 
@@ -349,6 +421,10 @@ class GPT(tf.keras.Model):
             self.token_emb.embeddings,
             transpose_b= True
         )
+
+        if use_cache:
+            return logits, new_past
+
         return logits
 
     def get_config(self):
