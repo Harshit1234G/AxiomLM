@@ -535,13 +535,15 @@ class GPT(tf.keras.Model):
 # ----------------------------
 # LR Schedule
 # ----------------------------
+@tf.keras.utils.register_keras_serializable()
 class WarmupCosine(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __init__(
         self, 
         base_lr: float, 
         warmup_steps: int, 
         total_steps: int, 
-        min_lr_ratio: float = 0.1
+        min_lr_ratio: float = 0.1,
+        **kwargs
     ) -> None:
         """
         Linear warmup followed by cosine decay learning rate schedule.
@@ -552,10 +554,11 @@ class WarmupCosine(tf.keras.optimizers.schedules.LearningRateSchedule):
             total_steps (int): Total number of training steps.
             min_lr_ratio (float, optional): Final LR = `base_lr * min_lr_ratio`. Defaults to 0.1.
         """
-        super().__init__()
+        super().__init__(**kwargs)
         self.base_lr = base_lr
         self.warmup_steps = warmup_steps
         self.total_steps = total_steps
+        self.min_lr_ratio = min_lr_ratio
         self.min_lr = base_lr * min_lr_ratio
 
     def __call__(self, step):
@@ -575,6 +578,19 @@ class WarmupCosine(tf.keras.optimizers.schedules.LearningRateSchedule):
             )
         )
         return lr
+    
+    def get_config(self):
+        return {
+            'base_lr': self.base_lr,
+            'warmup_steps': self.warmup_steps,
+            'total_steps': self.total_steps,
+            'min_lr_ratio': self.min_lr_ratio,
+        }
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+
 
 # ----------------------------
 # Metric
