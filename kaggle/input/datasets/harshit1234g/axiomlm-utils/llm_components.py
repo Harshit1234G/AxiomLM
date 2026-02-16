@@ -595,6 +595,7 @@ class WarmupCosine(tf.keras.optimizers.schedules.LearningRateSchedule):
 # ----------------------------
 # Metric
 # ----------------------------
+@tf.keras.utils.register_keras_serializable()
 class Perplexity(tf.keras.metrics.Metric):
     def __init__(self, name: str = 'perplexity', **kwargs):
         """
@@ -633,3 +634,7 @@ class Perplexity(tf.keras.metrics.Metric):
     def reset_states(self):
         self.total_loss.assign(0.0)
         self.total_tokens.assign(0.0)
+
+    def get_config(self):
+        config = super().get_config()
+        return config
