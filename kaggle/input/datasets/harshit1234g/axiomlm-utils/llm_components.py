@@ -397,49 +397,6 @@ class TransformerBlock(tf.keras.layers.Layer):
         })
         return config
 
-# ----------------------------
-# Metric
-# ----------------------------
-@tf.keras.utils.register_keras_serializable()
-class Perplexity(tf.keras.metrics.Metric):
-    def __init__(self, name: str = 'perplexity', **kwargs):
-        """
-        Perplexity is a key evaluation metric for language models that measures how well a probability model predicts a sample. It is defined as the exponentiated average negative log-likelihood of a sequence.
-
-        Args:
-            name (str, optional): Name of the metric. Defaults to 'perplexity'.
-        """
-        super().__init__(name= name, **kwargs)
-
-        self.total_loss = self.add_weight(
-            name= 'total_loss', 
-            initializer= 'zeros'
-        )
-        self.total_tokens = self.add_weight(
-            name= 'total_tokens', 
-            initializer= 'zeros'
-        )
-
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        loss = tf.keras.losses.sparse_categorical_crossentropy(
-            y_true, 
-            y_pred, 
-            from_logits= True
-        )
-
-        mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
-        loss = loss * mask
-
-        self.total_loss.assign_add(tf.reduce_sum(loss))
-        self.total_tokens.assign_add(tf.reduce_sum(mask))
-
-    def result(self):
-        return tf.exp(self.total_loss / self.total_tokens)
-
-    def reset_states(self):
-        self.total_loss.assign(0.0)
-        self.total_tokens.assign(0.0)
-
 # ----------------------------------
 # Generative Pretrained Transformer
 # ----------------------------------
@@ -618,3 +575,45 @@ class WarmupCosine(tf.keras.optimizers.schedules.LearningRateSchedule):
             )
         )
         return lr
+
+# ----------------------------
+# Metric
+# ----------------------------
+class Perplexity(tf.keras.metrics.Metric):
+    def __init__(self, name: str = 'perplexity', **kwargs):
+        """
+        Perplexity is a key evaluation metric for language models that measures how well a probability model predicts a sample. It is defined as the exponentiated average negative log-likelihood of a sequence.
+
+        Args:
+            name (str, optional): Name of the metric. Defaults to 'perplexity'.
+        """
+        super().__init__(name= name, **kwargs)
+
+        self.total_loss = self.add_weight(
+            name= 'total_loss', 
+            initializer= 'zeros'
+        )
+        self.total_tokens = self.add_weight(
+            name= 'total_tokens', 
+            initializer= 'zeros'
+        )
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        loss = tf.keras.losses.sparse_categorical_crossentropy(
+            y_true, 
+            y_pred, 
+            from_logits= True
+        )
+
+        mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
+        loss = loss * mask
+
+        self.total_loss.assign_add(tf.reduce_sum(loss))
+        self.total_tokens.assign_add(tf.reduce_sum(mask))
+
+    def result(self):
+        return tf.exp(self.total_loss / self.total_tokens)
+
+    def reset_states(self):
+        self.total_loss.assign(0.0)
+        self.total_tokens.assign(0.0)
