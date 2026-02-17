@@ -157,9 +157,10 @@ class LayerNormalization(tf.keras.layers.Layer):
         super().build(input_shape)
 
     def call(self, X):
-        X = tf.cast(X, self.compute_dtype)
+        X = tf.cast(X, tf.float32)
         mean, variance = tf.nn.moments(X, axes= -1, keepdims= True)
         normalized = (X - mean) / tf.sqrt(variance + self.epsilon)
+        normalized = tf.cast(normalized, self.compute_dtype)
         return self.gamma * normalized + self.beta
 
     def get_config(self):
@@ -204,7 +205,7 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         self.n_embeds = n_embeds
         self.n_heads = n_heads
         self.head_dim = n_embeds // n_heads
-        self.scale = self.head_dim ** -0.5     # scaling factor for stability
+        self.scale = tf.constant(self.head_dim ** -0.5, dtype= tf.float32)   # scaling factor for stability
 
         # Single linear projection for Q, K, V (more efficient than 3 separate layers)
         # Output shape: (B, T, 3 * n_embeds)
@@ -247,13 +248,15 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         present_v = v
 
         # (Q @ K^T) / d_k
-        att = tf.matmul(q, k, transpose_b= True) * self.scale
+        att = tf.matmul(q, k, transpose_b= True)
+        att = att * tf.cast(self.scale, att.dtype)
 
         # Training mode, full causal masking
         if past_k is None:
             mask = tf.linalg.band_part(tf.ones((T, T)), -1, 0)
             mask = tf.reshape(mask, (1, 1, T, T))
-            att = tf.where(mask == 0, -1e9, att)
+            neg_inf = tf.cast(-1e4, att.dtype)
+            att = tf.where(mask == 0, neg_inf, att)
 
         # applying softmax (attention over keys)
         att = tf.nn.softmax(att, axis= -1)
