@@ -514,6 +514,7 @@ class GPT(tf.keras.Model):
             self.token_emb.embeddings,
             transpose_b= True
         )
+        logits = tf.cast(logits, tf.float32)
 
         if use_cache:
             return logits, new_past
@@ -639,4 +640,5 @@ class Perplexity(tf.keras.metrics.Metric):
 
     def get_config(self):
         config = super().get_config()
+        config.update({'pad_id': self.pad_id})
         return config
