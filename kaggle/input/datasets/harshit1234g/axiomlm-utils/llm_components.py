@@ -206,6 +206,7 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         self.n_heads = n_heads
         self.head_dim = n_embeds // n_heads
         self.scale = tf.constant(self.head_dim ** -0.5, dtype= tf.float32)   # scaling factor for stability
+        self.max_seq_len = None    # for caching mask, will set in build
 
         # Single linear projection for Q, K, V (more efficient than 3 separate layers)
         # Output shape: (B, T, 3 * n_embeds)
@@ -214,6 +215,18 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         # Final projection after concatenating all heads
         # Output shape: (B, T, n_embeds)
         self.proj = tf.keras.layers.Dense(n_embeds)
+
+    def build(self, input_shape):
+        self.max_seq_len = input_shape[1]
+
+        causal_mask = tf.linalg.band_part(
+            tf.ones((self.max_seq_len, self.max_seq_len)),
+            -1,
+            0
+        )
+        causal_mask = tf.reshape(causal_mask, (1, 1, self.max_seq_len, self.max_seq_len))
+        self.causal_mask = tf.cast(causal_mask, tf.bool)
+        super().build(input_shape)
 
     def call(
         self, 
@@ -248,18 +261,21 @@ class MultiHeadedAttention(tf.keras.layers.Layer):
         present_v = v
 
         # (Q @ K^T) / d_k
-        att = tf.matmul(q, k, transpose_b= True)
-        att = att * tf.cast(self.scale, att.dtype)
+        att = tf.matmul(
+            tf.cast(q, tf.float32),
+            tf.cast(k, tf.float32),
+            transpose_b= True
+        )
+        att = att * self.scale
 
         # Training mode, full causal masking
         if past_k is None:
-            mask = tf.linalg.band_part(tf.ones((T, T)), -1, 0)
-            mask = tf.reshape(mask, (1, 1, T, T))
-            neg_inf = tf.cast(-1e4, att.dtype)
-            att = tf.where(mask == 0, neg_inf, att)
+            mask = self.causal_mask[:, :, :T, :T]
+            att = tf.where(mask, att, tf.constant(-1e9, dtype= tf.float32))
 
         # applying softmax (attention over keys)
         att = tf.nn.softmax(att, axis= -1)
+        att = tf.cast(att, q.dtype)
 
         out = tf.matmul(att, v)  # (B, H, T, D)
         out = tf.transpose(out, (0, 2, 1, 3))
