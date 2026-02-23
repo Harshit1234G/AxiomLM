@@ -567,6 +567,7 @@ class WarmupCosine(tf.keras.optimizers.schedules.LearningRateSchedule):
             'warmup_steps': self.warmup_steps,
             'total_steps': self.total_steps,
             'min_lr_ratio': self.min_lr_ratio,
+            'min_lr': self.min_lr
         }
 
     @classmethod
