@@ -92,10 +92,19 @@ def create_dataset_from_memmap(
 
     return ds
 
-def get_vocabsize(sp_model_path: str) -> int:
+def load_sp_tokenizer(path: str) -> SentencePieceProcessor:
+    """
+    Loads sentence piece tokenizer from the given path.
+
+    Args:
+        path (str): Path of the `*.model` file.
+
+    Returns:
+        SentencePieceProcessor: The loaded sentence piece tokenizer.
+    """
     sp = SentencePieceProcessor()
-    sp.load(sp_model_path)
-    return sp.get_piece_size()
+    sp.load(path)
+    return sp
 
 # ----------------------------
 # Layer Normalization
