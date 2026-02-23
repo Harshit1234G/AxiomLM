@@ -1,11 +1,15 @@
+from pathlib import Path
 import tensorflow as tf
 import numpy as np
 from sentencepiece import SentencePieceProcessor
 
 # ----------------------------
-# TFRecord of dataset
+# Tokenize entire file
 # ----------------------------
-def tokenize_file(sp_model_path: str, text_file_path: str) -> list[int]:
+def tokenize_file(sp_model_path: str | Path, text_file_path: str | Path) -> list[int]:
+    if isinstance(sp_model_path, Path):
+        sp_model_path = str(sp_model_path)
+
     sp = SentencePieceProcessor()
     sp.load(sp_model_path)
 
@@ -16,8 +20,34 @@ def tokenize_file(sp_model_path: str, text_file_path: str) -> list[int]:
     return tokens
 
 # ----------------------------
-# Dataset pipeline
+# TFRecord shards
 # ----------------------------
+def write_tfrecord(
+    tokens: list[int], 
+    output_path: str | Path, 
+    *,
+    shard_size: int = 1_000_000
+):
+    writer = tf.io.TFRecordWriter(output_path)
+
+    for i in range(0, len(tokens), shard_size):
+        chunk = tokens[i:i + shard_size]
+
+        feature = {
+            'tokens': tf.train.Feature(
+                int64_list= tf.train.Int64List(value= chunk)
+            )
+        }
+
+        example = tf.train.Example(
+            features= tf.train.Features(feature= feature)
+        )
+
+        writer.write(example.SerializeToString())
+
+    writer.close()
+
+
 class LMDatasetLoader:
     def __init__(
         self,
