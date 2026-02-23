@@ -633,10 +633,13 @@ class Perplexity(tf.keras.metrics.Metric):
     def result(self):
         return tf.exp(self.total_loss / self.total_tokens)
 
-    def reset_states(self):
+    def reset_state(self):
         self.total_loss.assign(0.0)
         self.total_tokens.assign(0.0)
 
     def get_config(self):
         config = super().get_config()
+        config.update({
+            'pad_id': self.pad_id
+        })
         return config
