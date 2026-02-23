@@ -10,8 +10,17 @@ def write_tokens_npy(
     text_file_path: str,
     output_path: str,
     *,
-    dtype= np.uint16
+    dtype: np.dtype = np.uint16
 ) -> None:
+    """
+    Reads a text file and then tokenize it line-by-line and then saves it as a `*.npy` file.
+
+    Args:
+        sp_model_path (str): Path to the sentencepiece tokenizer.
+        text_file_path (str): Path to the text file.
+        output_path (str): Path to the output file.
+        dtype (np.dtype, optional): Datatype of the resulting `*.npy` file. Defaults to np.uint16.
+    """
     # loading tokenizer
     sp = SentencePieceProcessor()
     sp.load(sp_model_path)
@@ -40,6 +49,20 @@ def create_dataset_from_memmap(
     shuffle_buffer: int,
     training: bool
 ) -> tf.data.Dataset:
+    """
+    Creates a loading pipeline, to read text data, apply tokenization, and create batched instances of shape `(batch_size, seq_len)`.
+
+    Args:
+        npy_path (str): Path to the `*.npy` file.
+        seq_len (int): Context size of the model.
+        batch_size (int): Batch size.
+        shift (int): The amount of shift for creating windows, use 1 if want dense dataset, else use `seq_len`.
+        shuffle_buffer (int): Shuffle buffer, only applied when training is True.
+        training (bool): True if training dataset, else False.
+
+    Returns:
+        tf.data.Dataset: The created dataset object.
+    """
     # loading mmap
     tokens = np.load(npy_path, mmap_mode= 'r')
     tokens = tf.convert_to_tensor(tokens, dtype= tf.int32)
