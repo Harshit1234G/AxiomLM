@@ -20,14 +20,13 @@ def tokenize_file(sp_model_path: str | Path, text_file_path: str | Path) -> list
     return tokens
 
 # ----------------------------
-# TFRecord shards
+# Writing TFRecord
 # ----------------------------
 def write_tfrecord(
     tokens: list[int], 
     output_path: str | Path, 
-    *,
     shard_size: int = 1_000_000
-):
+) -> None:
     writer = tf.io.TFRecordWriter(output_path)
 
     for i in range(0, len(tokens), shard_size):
@@ -47,108 +46,52 @@ def write_tfrecord(
 
     writer.close()
 
+# ----------------------------
+# Building TFRecord Dataset
+# ----------------------------
+def parse_example(example_proto):
+    feature_description = {
+        'tokens': tf.io.VarLenFeature(tf.int64),
+    }
 
-class LMDatasetLoader:
-    def __init__(
-        self,
-        tokenizer: SentencePieceProcessor,
-        shift: int,
-        seq_len: int,
-        batch_size: int,
-        shuffle_buffer: int
-    ) -> None:
-        """
-        An efficient dataset loading pipeline. `LMDatasetLoader` creates a uniform loading pipeline, to read text data, apply tokenization, and create batched instances of shape `(self.batch_size, self.seq_len)`.
+    example = tf.io.parse_single_example(example_proto, feature_description)
 
-        Args:
-            tokenizer (SentencePieceProcessor): The sentence piece tokenizer to use for tokenizing text. Can be loaded using `load_sp_tokenizer(path)` function.
-            shift (int): The amount of shift to use between instances.
-            seq_len (int): Context size for the model, a single instance will have `seq_len` many tokens.
-            batch_size (int): Batch size.
-            shuffle_buffer (int): Shuffle buffer, only applied if `self.create(text_file= ..., training= True)`
-        """
-        self.tokenizer = tokenizer
-        self.shift = shift
-        self.seq_len = seq_len
-        self.batch_size = batch_size
-        self.shuffle_buffer = shuffle_buffer
+    tokens = tf.sparse.to_dense(example['tokens'])
+    tokens = tf.cast(tokens, tf.int32)
 
-    def _sp_tokenize(self, line):
-        """
-        Creates tokens of the given line. Private function, not meant to be called directly.
-        """
-        tokens = self.tokenizer.encode(
-            line.numpy().decode('utf-8'), 
-            out_type= int
-        )
-        return tf.constant(tokens, dtype= tf.int32)
+    return tokens
 
-    def _tf_sp_tokenize(self, line):
-        """
-        `tf.py_function` wrapper for `self._sp_tokenize`. Private function, not meant to be called directly.
-        """
-        tokens = tf.py_function(
-            func= self._sp_tokenize,
-            inp= [line],
-            Tout= tf.int32
-        )
-        tokens.set_shape([None])
-        return tokens
-    
-    def create(
-        self, 
-        text_file: str,
-        training: bool
-    ) -> tf.data.Dataset:
-        """
-        Creates the `tf.data.Dataset` object.
+def create_dataset(
+    tfrecord_path: str | Path,
+    seq_len: int,
+    batch_size: int,
+    shift: int,
+    shuffle_buffer: int = 10000,
+    training: bool = True
+):
+    AUTOTUNE = tf.data.AUTOTUNE
 
-        Args:
-            text_file (str): Path of the text file.
-            training (bool): If training is True, then it will apply `shuffle` and `repeat`.
+    ds = tf.data.TFRecordDataset(tfrecord_path)
+    ds = ds.map(parse_example, num_parallel_calls= AUTOTUNE)
 
-        Returns:
-            tf.data.Dataset: The created dataset object.
-        """
-        AUTOTUNE = tf.data.AUTOTUNE
+    # Flatten chunks to continuous stream
+    ds = ds.flat_map(tf.data.Dataset.from_tensor_slices)
 
-        # Loading file
-        ds = tf.data.TextLineDataset(text_file)
+    # Sliding windows
+    ds = ds.window(seq_len + 1, shift= shift, drop_remainder= True)
+    ds = ds.flat_map(lambda w: w.batch(seq_len + 1))
 
-        # Tokenize
-        ds = ds.map(
-            self._tf_sp_tokenize,
-            num_parallel_calls= AUTOTUNE
-        )
-        # Flatten into one continuous token stream
-        ds = ds.flat_map(tf.data.Dataset.from_tensor_slices)
+    ds = ds.map(lambda x: (x[:-1], x[1:]),
+                num_parallel_calls= AUTOTUNE)
 
-        # create sliding windows of tokens
-        ds = ds.window(
-            self.seq_len + 1,
-            shift= self.shift,
-            drop_remainder= True,
-        )
+    if training:
+        ds = ds.shuffle(shuffle_buffer)
+        ds = ds.repeat()
 
-        # [[t1], [t2], ...] -> [t1, t2, ...]
-        ds = ds.flat_map(
-            lambda w: w.batch(self.seq_len + 1, drop_remainder= True)
-        )
+    ds = ds.batch(batch_size, drop_remainder= True)
+    ds = ds.prefetch(AUTOTUNE)
 
-        # Split into (input, target)
-        ds = ds.map(
-            lambda x: (x[:-1], x[1:]),
-            num_parallel_calls= AUTOTUNE
-        )
-
-        if training:
-            ds = ds.shuffle(self.shuffle_buffer)
-            ds = ds.repeat()
-
-        ds = ds.batch(self.batch_size, drop_remainder= True)
-        ds = ds.prefetch(AUTOTUNE)
-        
-        return ds
+    return ds
 
 # ----------------------------
 # Layer Normalization
