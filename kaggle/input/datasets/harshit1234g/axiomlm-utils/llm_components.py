@@ -6,18 +6,27 @@ from sentencepiece import SentencePieceProcessor
 # ----------------------------
 # Tokenize entire file
 # ----------------------------
-def tokenize_file(sp_model_path: str | Path, text_file_path: str | Path) -> list[int]:
-    if isinstance(sp_model_path, Path):
-        sp_model_path = str(sp_model_path)
-
+def write_tokens_npy(
+    sp_model_path: str,
+    text_file_path: str,
+    output_path: str,
+    *,
+    dtype= np.uint32
+):
     sp = SentencePieceProcessor()
     sp.load(sp_model_path)
 
-    with open(text_file_path, 'r', encoding= 'utf-8') as f:
-        text = f.read()
+    tokens = []
 
-    tokens = sp.encode(text, out_type= int)
-    return tokens
+    with open(text_file_path, 'r', encoding= 'utf-8') as f:
+        for line in f:
+            ids = sp.encode(line.strip(), out_type= int)
+            tokens.extend(ids)
+
+    tokens = np.array(tokens, dtype= dtype)
+    np.save(output_path, tokens)
+
+    print(f'Saved {len(tokens)} tokens to {output_path}')
 
 # ----------------------------
 # Writing TFRecord
@@ -75,7 +84,7 @@ def create_dataset(
     ds = ds.map(parse_example, num_parallel_calls= AUTOTUNE)
 
     # Flatten chunks to continuous stream
-    ds = ds.flat_map(tf.data.Dataset.from_tensor_slices)
+    ds = ds.unbatch()
 
     # Sliding windows
     ds = ds.window(seq_len + 1, shift= shift, drop_remainder= True)
