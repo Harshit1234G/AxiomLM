@@ -16,3 +16,5 @@ wikitext-103
 *.weights.h5
 checkpoints
 logs
+*.zip
+wikitext_npy

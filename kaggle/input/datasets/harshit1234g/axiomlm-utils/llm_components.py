@@ -1,104 +1,71 @@
-from pathlib import Path
 import tensorflow as tf
 import numpy as np
 from sentencepiece import SentencePieceProcessor
 
-# ----------------------------
-# Tokenize entire file
-# ----------------------------
+# -------------------------------
+# Tokenize file and save as .npy
+# -------------------------------
 def write_tokens_npy(
     sp_model_path: str,
     text_file_path: str,
     output_path: str,
     *,
-    dtype= np.uint32
-):
+    dtype= np.uint16
+) -> None:
+    # loading tokenizer
     sp = SentencePieceProcessor()
     sp.load(sp_model_path)
 
     tokens = []
 
+    # reading the file line-by-line and then encoding and extending
     with open(text_file_path, 'r', encoding= 'utf-8') as f:
         for line in f:
             ids = sp.encode(line.strip(), out_type= int)
             tokens.extend(ids)
 
     tokens = np.array(tokens, dtype= dtype)
-    np.save(output_path, tokens)
+    np.save(output_path, tokens)   # saves the file as continous token stream
 
     print(f'Saved {len(tokens)} tokens to {output_path}')
 
 # ----------------------------
-# Writing TFRecord
+# Loading data
 # ----------------------------
-def write_tfrecord(
-    tokens: list[int], 
-    output_path: str | Path, 
-    shard_size: int = 1_000_000
-) -> None:
-    writer = tf.io.TFRecordWriter(output_path)
-
-    for i in range(0, len(tokens), shard_size):
-        chunk = tokens[i:i + shard_size]
-
-        feature = {
-            'tokens': tf.train.Feature(
-                int64_list= tf.train.Int64List(value= chunk)
-            )
-        }
-
-        example = tf.train.Example(
-            features= tf.train.Features(feature= feature)
-        )
-
-        writer.write(example.SerializeToString())
-
-    writer.close()
-
-# ----------------------------
-# Building TFRecord Dataset
-# ----------------------------
-def parse_example(example_proto):
-    feature_description = {
-        'tokens': tf.io.VarLenFeature(tf.int64),
-    }
-
-    example = tf.io.parse_single_example(example_proto, feature_description)
-
-    tokens = tf.sparse.to_dense(example['tokens'])
-    tokens = tf.cast(tokens, tf.int32)
-
-    return tokens
-
-def create_dataset(
-    tfrecord_path: str | Path,
+def create_dataset_from_memmap(
+    npy_path: str,
     seq_len: int,
     batch_size: int,
     shift: int,
-    shuffle_buffer: int = 10000,
-    training: bool = True
-):
-    AUTOTUNE = tf.data.AUTOTUNE
+    shuffle_buffer: int,
+    training: bool
+) -> tf.data.Dataset:
+    # loading mmap
+    tokens = np.load(npy_path, mmap_mode= 'r')
+    tokens = tf.convert_to_tensor(tokens, dtype= tf.int32)
 
-    ds = tf.data.TFRecordDataset(tfrecord_path)
-    ds = ds.map(parse_example, num_parallel_calls= AUTOTUNE)
+    ds = tf.data.Dataset.from_tensor_slices(tokens)
 
-    # Flatten chunks to continuous stream
-    ds = ds.unbatch()
-
-    # Sliding windows
-    ds = ds.window(seq_len + 1, shift= shift, drop_remainder= True)
+    # create sliding windows of tokens
+    ds = ds.window(
+        seq_len + 1, 
+        shift= shift, 
+        drop_remainder= True
+    )
     ds = ds.flat_map(lambda w: w.batch(seq_len + 1))
 
-    ds = ds.map(lambda x: (x[:-1], x[1:]),
-                num_parallel_calls= AUTOTUNE)
+    # Split into (input, target)
+    ds = ds.map(
+        lambda x: (x[:-1], x[1:]), 
+        num_parallel_calls= tf.data.AUTOTUNE
+    )
 
     if training:
         ds = ds.shuffle(shuffle_buffer)
         ds = ds.repeat()
 
     ds = ds.batch(batch_size, drop_remainder= True)
-    ds = ds.prefetch(AUTOTUNE)
+    ds = ds.prefetch(tf.data.AUTOTUNE)
 
     return ds
 
