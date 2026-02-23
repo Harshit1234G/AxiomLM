@@ -92,6 +92,11 @@ def create_dataset_from_memmap(
 
     return ds
 
+def get_vocabsize(sp_model_path: str) -> int:
+    sp = SentencePieceProcessor()
+    sp.load(sp_model_path)
+    return sp.get_piece_size()
+
 # ----------------------------
 # Layer Normalization
 # ----------------------------
