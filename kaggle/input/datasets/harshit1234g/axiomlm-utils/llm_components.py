@@ -3,21 +3,17 @@ import numpy as np
 from sentencepiece import SentencePieceProcessor
 
 # ----------------------------
-# Tokenizer
+# TFRecord of dataset
 # ----------------------------
-def load_sp_tokenizer(path: str) -> SentencePieceProcessor:
-    """
-    Loads sentence piece tokenizer from the given path.
-
-    Args:
-        path (str): Path of the `*.model` file.
-
-    Returns:
-        SentencePieceProcessor: The loaded sentence piece tokenizer.
-    """
+def tokenize_file(sp_model_path: str, text_file_path: str) -> list[int]:
     sp = SentencePieceProcessor()
-    sp.load(path)
-    return sp
+    sp.load(sp_model_path)
+
+    with open(text_file_path, 'r', encoding= 'utf-8') as f:
+        text = f.read()
+
+    tokens = sp.encode(text, out_type= int)
+    return tokens
 
 # ----------------------------
 # Dataset pipeline
