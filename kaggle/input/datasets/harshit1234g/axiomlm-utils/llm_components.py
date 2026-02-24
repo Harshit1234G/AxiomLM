@@ -41,7 +41,7 @@ def write_tokens_npy(
 # ----------------------------
 # Loading data
 # ----------------------------
-def create_dataset_from_memmap(
+def create_dataset_from_npy(
     npy_path: str,
     seq_len: int,
     batch_size: int,
@@ -64,7 +64,7 @@ def create_dataset_from_memmap(
         tf.data.Dataset: The created dataset object.
     """
     # loading mmap
-    tokens = np.load(npy_path, mmap_mode= 'r')
+    tokens = np.load(npy_path)
     tokens = tf.convert_to_tensor(tokens, dtype= tf.int32)
 
     ds = tf.data.Dataset.from_tensor_slices(tokens)
