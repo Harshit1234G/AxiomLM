@@ -1,3 +1,4 @@
+import re
 import tensorflow as tf
 import numpy as np
 from sentencepiece import SentencePieceProcessor
@@ -627,3 +628,112 @@ class Perplexity(tf.keras.metrics.Metric):
             'pad_id': self.pad_id
         })
         return config
+
+# ----------------------------------
+# Text generation & Chat completion
+# ----------------------------------
+def clean_text(text: str) -> str:
+    # removing wikitext artifacts
+    text = text.replace('@,@', ',')
+    text = text.replace('@-@', '-')
+    text = text.replace('@.@', '.')
+
+    # remvoing <unk>, just in case
+    text = text.replace('<unk>', '')
+
+    # removing extra spaces before punctuation
+    text = re.sub(r'\s+([.,!?;:])', r'\1', text)
+
+    # fixing possessives
+    text = re.sub(r"\s+'s", "'s", text)
+
+    # fixing parentheses spacing
+    text = re.sub(r'\(\s+', '(', text)
+    text = re.sub(r'\s+\)', ')', text)
+
+    # fixing space in quotation
+    text = re.sub(r'\s+"', '"', text)
+    text = re.sub(r'"\s+', '"', text)
+    text = re.sub(r"\s+'", "'", text)
+    text = re.sub(r"'\s+", "'", text)
+
+    # Collapse multiple spaces
+    text = re.sub(r'\s+', ' ', text)
+
+    return text.strip()
+
+
+def top_k_logits(logits, k):
+    values, _ = tf.math.top_k(logits, k= k)
+    min_values = values[:, -1, tf.newaxis]
+    return tf.where(logits < min_values, -1e9, logits)
+
+
+def generate_text(
+    model: tf.keras.Model,
+    tokenizer: SentencePieceProcessor,
+    prompt: str,
+    *,
+    max_new_tokens: int = 512,
+    temperature: float = 1.0,
+    top_k: int = 50
+) -> str:
+    if max_new_tokens > model.seq_len:
+        raise ValueError(f'Currently the model has fixed length context window, so cannot generate text with more than {model.seq_len} tokens.')
+    
+    # encoding prompt
+    input_ids = tokenizer.encode(prompt)
+    input_ids = tf.constant([input_ids], dtype= tf.int32)
+
+    # truncate if prompt exceeds context window
+    if input_ids.shape[1] > model.seq_len:
+        input_ids = input_ids[:, -model.seq_len:]
+
+    # full prompt, first forward pass
+    logits, past = model(
+        input_ids,
+        past= None,
+        use_cache= True,
+        training= False
+    )
+    generated_ids = input_ids.numpy().tolist()[0]
+
+    # Only feed last token from now on
+    next_token = input_ids[:, -1:]
+
+    for _ in range(max_new_tokens):
+        if len(generated_ids) >= model.seq_len:
+            break
+
+        logits, past = model(
+            next_token,
+            past= past,
+            use_cache= True,
+            training= False
+        )
+
+        logits = logits[:, -1, :]
+
+        # Prevent <unk> sampling
+        unk_id = tokenizer.unk_id()
+        logits = tf.tensor_scatter_nd_update(
+            logits,
+            indices= [[0, unk_id]],
+            updates= [-1e9]
+        )
+
+        if temperature != 1.0:
+            logits = logits / temperature
+
+        logits = top_k_logits(logits, k= top_k)
+        next_token = tf.random.categorical(logits, num_samples= 1)
+
+        token_id = int(next_token.numpy()[0][0])
+        generated_ids.append(token_id)
+
+        eos_id = tokenizer.eos_id()
+        if eos_id is not None and token_id == eos_id:
+            break
+
+    text = tokenizer.decode(generated_ids)
+    return clean_text(text)
