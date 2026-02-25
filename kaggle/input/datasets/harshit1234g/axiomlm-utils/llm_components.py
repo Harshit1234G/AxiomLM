@@ -1,5 +1,4 @@
 import re
-from collections import Counter
 import tensorflow as tf
 import numpy as np
 from sentencepiece import SentencePieceProcessor
@@ -667,20 +666,17 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-def top_p_logits(logits, p: float = 0.9):
-    sorted_logits = tf.sort(logits, direction= 'DESCENDING')
-    cumulative_probs = tf.cumsum(tf.nn.softmax(sorted_logits, axis= -1), axis= -1)
+def top_k_logits(logits, k):
+    values, _ = tf.math.top_k(logits, k= k)
+    min_values = values[:, -1, tf.newaxis]
+    return tf.where(logits < min_values, -1e9, logits)
 
-    cutoff = cumulative_probs > p
-    cutoff = tf.concat([tf.zeros_like(cutoff[:, :1], dtype= tf.bool), cutoff[:, :-1]], axis= -1)
 
-    indices_to_remove = tf.scatter_nd(
-        tf.argsort(logits, direction= 'DESCENDING'),
-        cutoff,
-        tf.shape(logits)
-    )
-
-    return tf.where(indices_to_remove, -1e9, logits)
+def apply_frequency_penalty(logits, generated_ids, penalty: float):
+    ids = tf.constant(generated_ids, dtype= tf.int32)
+    counts = tf.math.bincount(ids, minlength= logits.shape[-1])
+    logits -= penalty * tf.cast(counts, logits.dtype)
+    return logits
 
 
 def generate_text(
@@ -690,7 +686,8 @@ def generate_text(
     *,
     max_new_tokens: int = 512,
     temperature: float = 1.0,
-    top_k: int = 50
+    top_k: int = 50,
+    freq_penalty: float = 0.05
 ) -> str:
     if max_new_tokens > model.seq_len:
         raise ValueError(f'Currently the model has fixed length context window, so cannot generate text with more than {model.seq_len} tokens.')
@@ -736,10 +733,12 @@ def generate_text(
             updates= [-1e9]
         )
 
+        logits = apply_frequency_penalty(logits, generated_ids, freq_penalty)
+
         if temperature != 1.0:
             logits = logits / temperature
 
-        logits = top_p_logits(logits, k= top_k)
+        logits = top_k_logits(logits, k= top_k)
         next_token = tf.random.categorical(logits, num_samples= 1)
 
         token_id = int(next_token.numpy()[0][0])
