@@ -1,4 +1,5 @@
 import re
+from collections import Counter
 import tensorflow as tf
 import numpy as np
 from sentencepiece import SentencePieceProcessor
@@ -641,8 +642,8 @@ def clean_text(text: str) -> str:
     # remvoing <unk>, just in case
     text = text.replace('<unk>', '')
 
-    # removing extra spaces before punctuation
-    text = re.sub(r'\s+([.,!?;:])', r'\1', text)
+    # remove section headers
+    text = re.sub(r'=+\s*[^=]+\s*=+', '', text)
 
     # fixing possessives
     text = re.sub(r"\s+'s", "'s", text)
@@ -657,16 +658,29 @@ def clean_text(text: str) -> str:
     text = re.sub(r"\s+'", "'", text)
     text = re.sub(r"'\s+", "'", text)
 
+    # removing extra spaces before punctuation
+    text = re.sub(r'\s+([.,!?;:])', r'\1', text)
+
     # Collapse multiple spaces
     text = re.sub(r'\s+', ' ', text)
 
     return text.strip()
 
 
-def top_k_logits(logits, k):
-    values, _ = tf.math.top_k(logits, k= k)
-    min_values = values[:, -1, tf.newaxis]
-    return tf.where(logits < min_values, -1e9, logits)
+def top_p_logits(logits, p: float = 0.9):
+    sorted_logits = tf.sort(logits, direction= 'DESCENDING')
+    cumulative_probs = tf.cumsum(tf.nn.softmax(sorted_logits, axis= -1), axis= -1)
+
+    cutoff = cumulative_probs > p
+    cutoff = tf.concat([tf.zeros_like(cutoff[:, :1], dtype= tf.bool), cutoff[:, :-1]], axis= -1)
+
+    indices_to_remove = tf.scatter_nd(
+        tf.argsort(logits, direction= 'DESCENDING'),
+        cutoff,
+        tf.shape(logits)
+    )
+
+    return tf.where(indices_to_remove, -1e9, logits)
 
 
 def generate_text(
@@ -725,7 +739,7 @@ def generate_text(
         if temperature != 1.0:
             logits = logits / temperature
 
-        logits = top_k_logits(logits, k= top_k)
+        logits = top_p_logits(logits, k= top_k)
         next_token = tf.random.categorical(logits, num_samples= 1)
 
         token_id = int(next_token.numpy()[0][0])
