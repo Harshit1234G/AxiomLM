@@ -18,3 +18,4 @@ checkpoints
 logs
 *.zip
 wikitext_npy
+dolly_15k
