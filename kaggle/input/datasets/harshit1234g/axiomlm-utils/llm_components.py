@@ -1,4 +1,5 @@
 import re
+from typing import Generator
 import tensorflow as tf
 import numpy as np
 from sentencepiece import SentencePieceProcessor
@@ -93,7 +94,7 @@ def create_dataset_from_npy(
 
     return ds
 
-def sft_pair_generator(features_path, labels_path):
+def sft_pair_generator(features_path: str, labels_path: str) -> Generator:
     """
     Generator that yields (input_ids, labels)
     """
@@ -115,6 +116,19 @@ def load_sft_dataset(
     batch_size: int,
     shuffle_buffer: int
 ) -> tf.data.Dataset:
+    """
+    Loads the preprocessed sft dataset.
+
+    Args:
+        features_path (str): Path to the `processed_features.npy` file.
+        labels_path (str): Path to the `processed_labels.npy` file.
+        pad_token_id (int): Pad token id of the tokenizer.
+        batch_size (int): Batch size.
+        shuffle_buffer (int): Shuffle buffer.
+
+    Returns:
+        tf.data.Dataset: The created dataset object.
+    """
     output_signature = (
         tf.TensorSpec(shape= (None,), dtype= tf.int32),
         tf.TensorSpec(shape= (None,), dtype= tf.int32),
