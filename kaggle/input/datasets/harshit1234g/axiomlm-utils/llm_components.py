@@ -93,6 +93,50 @@ def create_dataset_from_npy(
 
     return ds
 
+def sft_pair_generator(features_path, labels_path):
+    """
+    Generator that yields (input_ids, labels)
+    """
+    features = np.load(features_path, allow_pickle= True)
+    labels = np.load(labels_path, allow_pickle= True)
+
+    assert len(features) == len(labels), 'Features and labels size mismatch'
+
+    for x, y in zip(features, labels):
+        yield (
+            np.array(x, dtype= np.int32),
+            np.array(y, dtype= np.int32),
+        )
+
+def load_sft_dataset(
+    features_path: str,
+    labels_path: str,
+    pad_token_id: int,
+    batch_size: int,
+    shuffle_buffer: int
+) -> tf.data.Dataset:
+    output_signature = (
+        tf.TensorSpec(shape= (None,), dtype= tf.int32),
+        tf.TensorSpec(shape= (None,), dtype= tf.int32),
+    )
+
+    ds = tf.data.Dataset.from_generator(
+        lambda: sft_pair_generator(features_path, labels_path),
+        output_signature= output_signature,
+    )
+
+    ds = ds.shuffle(shuffle_buffer)
+
+    ds = ds.padded_batch(
+        batch_size,
+        padded_shapes= ([None], [None]),
+        padding_values= (pad_token_id, -100)
+    )
+
+    ds = ds.prefetch(tf.data.AUTOTUNE)
+
+    return ds
+
 def load_sp_tokenizer(path: str) -> SentencePieceProcessor:
     """
     Loads sentence piece tokenizer from the given path.
