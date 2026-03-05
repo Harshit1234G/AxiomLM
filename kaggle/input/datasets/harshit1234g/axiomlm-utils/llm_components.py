@@ -692,7 +692,8 @@ class Perplexity(tf.keras.metrics.Metric):
     def get_config(self):
         config = super().get_config()
         config.update({
-            'pad_id': self.pad_id
+            'pad_id': self.pad_id,
+            'ignore_index': self.ignore_index
         })
         return config
 
