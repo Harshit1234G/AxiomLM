@@ -638,16 +638,24 @@ class WarmupCosine(tf.keras.optimizers.schedules.LearningRateSchedule):
 # ----------------------------
 @tf.keras.utils.register_keras_serializable()
 class Perplexity(tf.keras.metrics.Metric):
-    def __init__(self, pad_id: int, name: str = 'ppl', **kwargs):
+    def __init__(
+        self, 
+        pad_id: int, 
+        ignore_index: int | None = None, 
+        name: str = 'ppl', **kwargs
+    ):
         """
         Perplexity is a key evaluation metric for language models that measures how well a probability model predicts a sample. It is defined as the exponentiated average negative log-likelihood of a sequence.
 
         Args:
+            pad_id (int): <pad> token id of the tokenizer.
             name (str, optional): Name of the metric. Defaults to 'perplexity'.
+            ignore_index (int, optional): The class to ignore for calculating loss. Defaults to None.
         """
         super().__init__(name= name, **kwargs)
 
         self.pad_id = pad_id
+        self.ignore_index = ignore_index
 
         self.total_loss = self.add_weight(
             name= 'total_loss', 
@@ -664,7 +672,8 @@ class Perplexity(tf.keras.metrics.Metric):
         loss = tf.keras.losses.sparse_categorical_crossentropy(
             y_true, 
             y_pred, 
-            from_logits= True
+            from_logits= True,
+            ignore_class= self.ignore_index
         )
 
         mask = tf.cast(tf.not_equal(y_true, self.pad_id), tf.float32)
