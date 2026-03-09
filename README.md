@@ -48,7 +48,7 @@ The result is a **fully functional 33M parameter language model** capable of gen
 | Encoding              | BPE                                     |
 | Parameters            | ~33M                                    |
 | Pretraining Time      | ~10 Hours                               |
-| GPU                   | Kaggle – 2× NVIDIA T4 (32GB VRAM total) |
+| GPU                   | Kaggle - 2× NVIDIA T4 (32GB VRAM total) |
 | Pretraining Dataset   | WikiText-103                            |
 | Training Tokens       | ~600M                                   |
 | Batch Size            | 64                                      |
@@ -182,7 +182,7 @@ The dataset preserves natural article structure and long-range context.
 
 **Dolly-15k**
 
-An instruction dataset containing ~15k prompt–response pairs covering tasks such as:
+An instruction dataset containing ~15k prompt-response pairs covering tasks such as:
 
 * question answering
 * summarization
@@ -270,13 +270,13 @@ One major cause was the difference between the two datasets.
 **Pretraining distribution**
 
 ```
-Topic → Wikipedia paragraph
+Topic -> Wikipedia paragraph
 ```
 
 **Instruction tuning distribution**
 
 ```
-Instruction → response
+Instruction -> response
 ```
 
 Because the model was trained almost entirely on encyclopedic text, adapting it to instruction-response patterns required large behavioral changes.
@@ -356,7 +356,7 @@ Several directions could significantly improve the model.
 
 ### Scaling the Model
 
-Training models in the **500M–1B parameter range** would dramatically increase capacity for:
+Training models in the **500M-1B parameter range** would dramatically increase capacity for:
 
 * instruction following
 * reasoning
@@ -428,14 +428,16 @@ You may need to adjust file paths when running the notebooks locally.
 
 # License
 
-This project is released under the **MIT License**.
+This project is licensed under the [Apache 2.0 License](https://github.com/Harshit1234G/AxiomLM/blob/main/LICENSE).
 
 ---
 
 # References
 
-* Vaswani et al. – *Attention Is All You Need*
-* Kaplan et al. – *Scaling Laws for Neural Language Models*
-* Hoffmann et al. – *Training Compute-Optimal Large Language Models (Chinchilla)*
+* Vaswani et al. - *Attention Is All You Need*
+* Kaplan et al. - *Scaling Laws for Neural Language Models*
+* Hoffmann et al. - *Training Compute-Optimal Large Language Models (Chinchilla)*
+* Brown et al. - *Language Models are Few-Shot Learners*
+* Hillier et al. - *Super Tiny Language Models*
 * WikiText-103 Dataset
 * Databricks Dolly-15k Dataset
